@@ -1,7 +1,9 @@
+from typing import Optional
+
 import asyncpg
 from app.core.config import settings
 
-_pool: asyncpg.Pool | None = None
+_pool: Optional[asyncpg.Pool] = None
 
 
 async def init_db():

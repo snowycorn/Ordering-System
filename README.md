@@ -1,8 +1,10 @@
-這個專案是一個 **Order & Inventory Service**，用 FastAPI 做 HTTP API，PostgreSQL 存正式資料，Redis 做庫存快取與即時狀態，RabbitMQ 做非同步訂單事件。整體是典型「API → Service → Repository → DB/Cache/Queue」分層。
+# Order & Inventory Service
 
-**整體架構**
+Order & Inventory Service 是一個 FastAPI 服務，負責員工訂餐、商家查看訂單、庫存管理，以及透過 RabbitMQ worker 非同步寫入訂單資料。
 
-```
+## 架構
+
+```text
 Client
   |
   v
@@ -15,207 +17,156 @@ Service layer
   |
   +--> Redis
   |
-  +--> RabbitMQ --> Worker --> Repository --> PostgreSQL
+  +--> RabbitMQ --> Worker --> Repository layer --> PostgreSQL
 ```
 
-**入口層：app/main.py**
+主要分層：
 
-[app/main.py](</c:/Users/USER/Desktop/雲原生/order-service (2)/order-service/app/main.py>) 是服務啟動入口。
+- `app/api/`：HTTP route，處理 request/response、權限入口、呼叫 service。
+- `app/services/`：商業邏輯，例如建立訂單、取消訂單、查詢訂單、庫存處理。
+- `app/repositories/`：PostgreSQL 存取層。
+- `app/db/`：PostgreSQL、Redis、RabbitMQ client 初始化與 helper。
+- `app/models/`：Pydantic request/response model 與 event schema。
+- `app/worker/`：RabbitMQ consumer，處理非同步訂單建立流程。
+- `app/tests/`：pytest 測試，目前主要覆蓋 API router。
 
-它做幾件事：
+## API
 
-1. 建立 FastAPI app。
-2. 啟動時初始化 PostgreSQL、Redis、RabbitMQ。
-3. 啟動背景 worker：`OrderWorker()`。
-4. 掛上兩組 API router：
-   - `/orders`
-   - `/inventory`
-5. 提供 `/health` 健康檢查。
+所有需要登入的 API 都使用 Bearer JWT。`app/core/auth.py` 會解析 token，回傳：
 
-也就是說，這個服務啟動後，API server 和訂單背景 worker 會跑在同一個應用程式裡。
-
-**API 層：app/api/**
-
-API 層負責接 HTTP request、做基本權限檢查、呼叫 service。
-
-[app/api/orders.py](</c:/Users/USER/Desktop/雲原生/order-service (2)/order-service/app/api/orders.py>) 提供訂單 API：
-
-- `POST /orders`：建立訂單
-```
+```json
 {
-  "vendor_id": 0,
-  "menu_id": 0,
-  "menu_name": "string",
-  "price": 0,
+  "user_id": 1,
+  "role": "employee"
+}
+```
+
+支援角色：
+
+- `employee`
+- `vendor`
+- `admin`
+
+### Orders
+
+檔案：[app/api/orders.py](app/api/orders.py)
+
+| Method | Path | 說明 |
+| --- | --- | --- |
+| `POST` | `/orders` | 建立訂單 |
+| `GET` | `/orders/me` | 查目前登入員工今日訂單 |
+| `GET` | `/orders/me/history` | 查目前登入員工歷史訂單 |
+| `GET` | `/orders/{order_id}` | 依角色查單筆訂單 |
+| `PATCH` | `/orders/{order_id}` | 更新訂單狀態 |
+
+建立訂單：
+
+```json
+{
+  "vendor_id": 7,
+  "menu_id": 42,
+  "menu_name": "Lunch Box",
+  "price": 120,
   "quantity": 1,
-  "pickup_date": "2026-05-26"
+  "pickup_date": "2026-05-27"
 }
 ```
-- `DELETE /orders/{order_id}`：取消訂單
-- `GET /orders/me/today`：查今天自己的訂單
-- `GET /orders/me/history`：查歷史訂單
-- `GET /orders/{order_id}`：查單筆訂單
 
-[app/api/billing.py](</c:/Users/USER/Desktop/雲原生/order-service (2)/order-service/app/api/orders.py>)：提供商家收到的訂單 API
+更新訂單狀態：
 
-- `GET	/vendor_orders/me/today`：查某商家今天收到的訂單
-- `GET	/vendor_orders/me/history`：查某商家的歷史訂單
-- `DELETE	/vendor_orders/{order_id}`：商家取消訂單，只有 `vendor` 或 `admin` 可以用
-
-[app/api/inventory.py](</c:/Users/USER/Desktop/雲原生/order-service (2)/order-service/app/api/inventory.py>) 提供庫存 API：
-
-- `GET /inventory/{menu_id}`：查某菜單某天剩餘庫存
-- `PUT /inventory/{menu_id}`：設定庫存，只有 `vendor` 或 `admin` 可以用
-
-API 層本身不直接操作 DB。它把工作交給 `OrderService` 或 `InventoryService`。
-
-**Service 層：app/services/**
-
-Service 層是商業邏輯核心。
-
-[app/services/order_service.py](</c:/Users/USER/Desktop/雲原生/order-service (2)/order-service/app/services/order_service.py>) 負責訂單流程。
-
-建立訂單時大致流程是：
-
-1. 用 Redis Lua script 原子扣庫存，避免超賣。
-2. 建立訂單 ID 和訂單物件。
-3. 把訂單狀態先寫到 Redis，狀態是 `pending`。
-4. 發送 `order.created` event 到 RabbitMQ。
-5. 回傳 `order queued` 給 client。
-
-注意：建立訂單時不是馬上寫 PostgreSQL，而是丟到 RabbitMQ，之後由 worker 非同步寫入 DB。
-
-取消訂單時流程是：
-
-1. 從 PostgreSQL 查訂單。
-2. 檢查訂單是否存在、是否屬於目前使用者、是否已取消。
-3. 檢查是否超過取消期限。
-4. 更新 PostgreSQL 訂單狀態為 `cancelled`。
-5. Redis 補回庫存。
-6. Redis 更新訂單狀態。
-7. 發送 `order.cancelled` event。
-
-[app/services/inventory_service.py](</c:/Users/USER/Desktop/雲原生/order-service (2)/order-service/app/services/inventory_service.py>) 負責庫存邏輯。
-
-查庫存時使用 cache-aside：
-
-1. 先查 Redis。
-2. Redis 有資料就直接回傳。
-3. Redis 沒資料才查 PostgreSQL。
-4. 查到後寫回 Redis，TTL 10 分鐘。
-
-設定庫存時：
-
-1. 寫入或更新 PostgreSQL。
-2. 同步把庫存寫入 Redis。
-
-**Repository 層：app/repositories/**
-
-Repository 層負責包裝 SQL，讓 service 不需要直接寫資料庫查詢。
-
-[app/repositories/order_repository.py](</c:/Users/USER/Desktop/雲原生/order-service (2)/order-service/app/repositories/order_repository.py>) 負責 `orders` table：
-
-- `create()`：新增訂單
-- `get_by_id()`：用 ID 查訂單
-- `update_status()`：更新狀態
-- `list_by_employee()`：查某員工歷史訂單
-- `get_today_order()`：查今天的訂單
-
-[app/repositories/inventory_repository.py](</c:/Users/USER/Desktop/雲原生/order-service (2)/order-service/app/repositories/inventory_repository.py>) 負責 `daily_inventory` table：
-
-- `get()`：查庫存
-- `decrement()`：扣 DB 庫存
-- `increment()`：加回 DB 庫存
-- `upsert()`：新增或更新庫存
-
-Repository 不應該處理商業規則，它只負責資料存取。
-
-**Model 層：app/models/**
-
-[app/models/order.py](</c:/Users/USER/Desktop/雲原生/order-service (2)/order-service/app/models/order.py>) 定義資料結構，主要用 Pydantic。
-
-裡面有：
-
-- `OrderStatus`：訂單狀態 enum，包含 `pending`、`confirmed`、`cancelled`、`completed`
-- `Order`：訂單資料模型
-- `DailyInventory`：每日庫存模型
-- `PlaceOrderRequest`：建立訂單 request body
-- `SetInventoryRequest`：設定庫存 request body
-- `OrderEvent`：送到 RabbitMQ 的事件格式
-
-簡單講，model 層定義「資料長什麼樣子」。
-
-**DB / Infra 層：app/db/**
-
-這層負責外部系統連線。
-
-[app/db/postgres.py](</c:/Users/USER/Desktop/雲原生/order-service (2)/order-service/app/db/postgres.py>) 建立 asyncpg connection pool。
-
-[app/db/redis.py](</c:/Users/USER/Desktop/雲原生/order-service (2)/order-service/app/db/redis.py>) 建立 Redis client，並定義：
-
-- inventory key：`inventory:{menu_id}:{date}`
-- order status key：`order:today:{order_id}`
-- 原子扣庫存 Lua script
-- 原子補庫存 Lua script
-
-[app/db/rabbitmq.py](</c:/Users/USER/Desktop/雲原生/order-service (2)/order-service/app/db/rabbitmq.py>) 負責 RabbitMQ：
-
-- 建立 exchange：`order_events`
-- 建立 queue：
-  - `order.created`
-  - `order.cancelled`
-- 提供 `publish()`
-- 提供 `consume()`
-
-**Worker 層：app/worker/**
-
-[app/worker/order_worker.py](</c:/Users/USER/Desktop/雲原生/order-service (2)/order-service/app/worker/order_worker.py>) 是背景消費者。
-
-它目前主要消費 `order.created` queue：
-
-1. 收到 `order.created` event。
-2. 建立 `Order` 物件。
-3. 寫入 PostgreSQL。
-4. 扣 PostgreSQL 裡的庫存。
-5. 把 Redis 訂單狀態從 `pending` 改成 `confirmed`。
-
-所以訂單建立流程是非同步的：API 先快速回應，DB 寫入由 worker 處理。
-
-**Core 層：app/core/**
-
-[app/core/config.py](</c:/Users/USER/Desktop/雲原生/order-service (2)/order-service/app/core/config.py>) 管理設定值，例如：
-
-- `DATABASE_URL`
-- `REDIS_URL`
-- `RABBITMQ_URL`
-- `JWT_SECRET`
-
-[app/core/auth.py](</c:/Users/USER/Desktop/雲原生/order-service (2)/order-service/app/core/auth.py>) 負責 JWT 驗證。
-
-API 裡的：
-
-```python
-user: Annotated[dict, Depends(get_current_user)]
-```
-
-會從 Bearer token 解出：
-
-```python
+```json
 {
-    "user_id": ...,
-    "role": ...
+  "status": "cancelled"
 }
 ```
 
-後面 service 就用 `user_id` 判斷訂單是不是自己的，用 `role` 判斷能不能設定庫存。
+員工修改訂單數量：
 
-**資料庫結構**
+```json
+{
+  "quantity": 3
+}
+```
 
-[migrations/001_init.sql](</c:/Users/USER/Desktop/雲原生/order-service (2)/order-service/migrations/001_init.sql>) 建立兩張表：
+`PATCH /orders/{order_id}` 由 `OrderService.update_order(order_id, actor, payload)` 統一處理：
 
-`orders`：存訂單資料。
+- `employee`：可以取消自己的訂單，或修改自己的訂單數量。
+- `vendor`：只能 reject/cancel 自己收到的訂單。
+- `admin`：可以更新任意訂單狀態。
 
-重點欄位：
+### Vendor Orders
+
+檔案：[app/api/vendor_orders.py](app/api/vendor_orders.py)
+
+| Method | Path | 說明 |
+| --- | --- | --- |
+| `GET` | `/vendor/orders/today` | 商家查今日收到的訂單 |
+| `GET` | `/vendor/orders/history` | 商家查歷史收到的訂單 |
+
+只有 `vendor` 和 `admin` 可以使用。
+
+### Inventory
+
+檔案：[app/api/inventory.py](app/api/inventory.py)
+
+| Method | Path | 說明 |
+| --- | --- | --- |
+| `GET` | `/inventory/{menu_id}` | 查指定菜單庫存 |
+| `PUT` | `/inventory/{menu_id}` | 設定指定菜單庫存 |
+
+設定庫存：
+
+```json
+{
+  "date": "2026-05-27",
+  "quantity": 30
+}
+```
+
+`PUT /inventory/{menu_id}` 只有 `vendor` 和 `admin` 可以使用。
+
+## 訂單流程
+
+建立訂單：
+
+```text
+POST /orders
+  -> app/api/orders.py
+  -> OrderService.create_order()
+  -> Redis Lua script 扣庫存
+  -> Redis 寫入 order status = pending
+  -> RabbitMQ publish order.created
+  -> API 回傳 order queued
+```
+
+worker 非同步處理：
+
+```text
+RabbitMQ order.created
+  -> OrderWorker.handle_created()
+  -> PostgreSQL 寫入 orders
+  -> PostgreSQL 更新 daily_inventory
+  -> Redis order status = confirmed
+```
+
+取消 / reject / 更新狀態：
+
+```text
+PATCH /orders/{order_id}
+  -> app/api/orders.py
+  -> OrderService.update_order(order_id, actor, payload)
+  -> 依 role 檢查權限
+  -> 更新 PostgreSQL status
+  -> 更新 Redis status
+  -> 必要時補回 inventory
+  -> publish order.cancelled
+```
+
+## Data Model
+
+主要資料表定義在 [migrations/001_init.sql](migrations/001_init.sql)。
+
+`orders`：
 
 - `id`
 - `employee_id`
@@ -230,50 +181,177 @@ user: Annotated[dict, Depends(get_current_user)]
 - `status`
 - `created_at`
 
-`daily_inventory`：存每日庫存。
-
-重點欄位：
+`daily_inventory`：
 
 - `menu_id`
 - `target_date`
 - `remaining_quantity`
 
-並且有唯一限制：
+`daily_inventory` 對 `(menu_id, target_date)` 有 unique constraint。
 
-```sql
-UNIQUE (menu_id, target_date)
+## Docker
+
+啟動完整服務：
+
+```bash
+docker compose up --build
 ```
 
-代表同一個菜單同一天只能有一筆庫存紀錄。
+背景啟動：
 
-**Docker / 部署**
+```bash
+docker compose up -d --build
+```
 
-[docker-compose.yml](</c:/Users/USER/Desktop/雲原生/order-service (2)/order-service/docker-compose.yml>) 會啟動四個服務：
+服務：
 
 - `order-service`：FastAPI app
-- `postgres`：正式資料庫
-- `redis`：快取與即時庫存
-- `rabbitmq`：訊息佇列
+- `postgres`：PostgreSQL
+- `redis`：Redis
+- `rabbitmq`：RabbitMQ + management UI
+- `order-service-test`：測試容器，只有 `test` profile 啟用
 
-PostgreSQL 初始化時會掛載 `migrations/001_init.sql`，所以 container 第一次啟動會建表。
+預設 API port：
 
-**一個訂單從建立到完成的資料流**
-
-```
-POST /orders
-  -> orders.py
-  -> OrderService.place_order()
-  -> Redis 原子扣庫存
-  -> Redis 寫入 order status = pending
-  -> RabbitMQ publish order.created
-  -> 回傳 order queued
-
-背景：
-RabbitMQ order.created
-  -> OrderWorker.handle_created()
-  -> PostgreSQL 寫入 orders
-  -> PostgreSQL 扣 daily_inventory
-  -> Redis order status = confirmed
+```text
+http://localhost:8081
 ```
 
-這個設計的核心想法是：**用 Redis 擋高併發庫存扣減，用 RabbitMQ 平滑化訂單寫入，用 PostgreSQL 保存最終正式資料**。
+Health check：
+
+```bash
+curl http://localhost:8081/health
+```
+
+RabbitMQ management UI：
+
+```text
+http://localhost:15672
+```
+
+預設帳密：
+
+```text
+guest / guest
+```
+
+## Environment
+
+本機設定放在 `.env`：
+
+```env
+JWT_SECRET=thisisasecret_shu
+DATABASE_URL=postgresql://order_user:order_pass@postgres:5432/order_db
+REDIS_URL=redis://redis:6379/0
+RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+TEST_REPORT_DIR=./reports
+```
+
+`TEST_REPORT_DIR` 是 Docker 測試容器輸出 report 的本機資料夾。預設會寫到：
+
+```text
+reports/
+```
+
+## Testing
+
+目前測試放在：
+
+```text
+app/tests/
+```
+
+測試檔：
+
+- [app/tests/api/test_inventory.py](app/tests/api/test_inventory.py)
+- [app/tests/api/test_orders.py](app/tests/api/test_orders.py)
+- [app/tests/api/test_vendor_orders.py](app/tests/api/test_vendor_orders.py)
+- [app/tests/core/test_auth.py](app/tests/core/test_auth.py)
+- [app/tests/db/test_redis.py](app/tests/db/test_redis.py)
+- [app/tests/services/test_inventory_service.py](app/tests/services/test_inventory_service.py)
+- [app/tests/services/test_order_service.py](app/tests/services/test_order_service.py)
+
+測試策略：
+
+- 使用 `FastAPI` + `TestClient` 掛單一 router。
+- 用 dependency override 替換 `get_current_user` 和 service。
+- 不連 PostgreSQL、Redis、RabbitMQ。
+- 目前主要測 API router 行為、權限分支、request/response shape。
+
+### 用 Docker 跑測試
+
+第一次或 requirements 有更新時：
+
+```bash
+docker compose --profile test run --rm --build order-service-test
+```
+
+平常跑：
+
+```bash
+docker compose --profile test run --rm order-service-test
+```
+
+測試容器會執行：
+
+```bash
+python -m pytest app/tests -vv \
+  --html=reports/test-report.html \
+  --self-contained-html \
+  --cov=app \
+  --cov-report=term-missing \
+  --cov-report=html:reports/coverage \
+  --cov-report=xml:reports/coverage.xml
+```
+
+因為 compose 有掛 volume：
+
+```yaml
+${TEST_REPORT_DIR:-./reports}:/app/reports
+```
+
+所以 Docker 跑完後，report 會出現在本機：
+
+```text
+reports/test-report.html
+reports/coverage/index.html
+reports/coverage.xml
+```
+
+在 Windows 開啟測試結果：
+
+```powershell
+start reports/test-report.html
+```
+
+在 Windows 開啟 coverage：
+
+```powershell
+start reports/coverage/index.html
+```
+
+### Coverage 說明
+
+目前 coverage 涵蓋 API router、core auth、Redis helper，以及部分 service logic。若 coverage 仍偏低是正常的，因為以下部分還沒被完整測到：
+
+- `app/repositories/`
+- `app/db/postgres.py`
+- `app/db/rabbitmq.py`
+- `app/worker/`
+- `app/main.py` lifespan
+
+要提高 coverage，下一步可以補 repository、worker、RabbitMQ/PostgreSQL 初始化流程的測試。
+
+## Useful Commands
+
+啟動服務：
+
+```bash
+docker compose up -d --build
+```
+
+只跑測試並輸出本機 report：
+
+```bash
+docker compose --profile test run --rm --build order-service-test
+```

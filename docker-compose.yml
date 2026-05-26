@@ -21,6 +21,33 @@ services:
       rabbitmq:
         condition: service_healthy
 
+  order-service-test:
+    build: .
+    container_name: order-service-test
+    profiles:
+      - test
+    command:
+      [
+        "python",
+        "-m",
+        "pytest",
+        "app/tests",
+        "-vv",
+        "--html=reports/test-report.html",
+        "--self-contained-html",
+        "--cov=app",
+        "--cov-report=term-missing",
+        "--cov-report=html:reports/coverage",
+        "--cov-report=xml:reports/coverage.xml"
+      ]
+    environment:
+      DATABASE_URL: postgresql://order_user:order_pass@postgres:5432/order_db
+      REDIS_URL:    redis://redis:6379/0
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      JWT_SECRET:   ${JWT_SECRET:-thisisasecret_shu}
+    volumes:
+      - ${TEST_REPORT_DIR:-./reports}:/app/reports
+
   # ── PostgreSQL ─────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine

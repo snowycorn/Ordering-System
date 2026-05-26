@@ -55,6 +55,12 @@ class SetInventoryRequest(BaseModel):
     quantity: int = Field(..., ge=0)
 
 
+class UpdateOrderRequest(BaseModel):
+    status: Optional[OrderStatus] = None
+    action: Optional[str] = None
+    quantity: Optional[int] = Field(default=None, ge=1)
+
+
 # ── RabbitMQ event ─────────────────────────────────────────────
 
 class OrderEvent(BaseModel):

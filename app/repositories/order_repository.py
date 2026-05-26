@@ -44,6 +44,14 @@ class OrderRepository:
         )
         return result == "UPDATE 1"
 
+    async def update_quantity(self, order_id: str, quantity: int, total_price: int) -> bool:
+        pool = get_pool()
+        result = await pool.execute(
+            "UPDATE orders SET quantity = $1, total_price = $2 WHERE id = $3",
+            quantity, total_price, order_id,
+        )
+        return result == "UPDATE 1"
+
     async def list_by_employee(
         self, employee_id: int, from_dt: datetime, to_dt: datetime
     ) -> list[Order]:

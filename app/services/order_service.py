@@ -1,12 +1,11 @@
 import time
 import uuid
 from datetime import date, datetime, timedelta, timezone
-from typing import Optional
 
 from fastapi import HTTPException, status
 
 from app.db import redis as rdb_mod, rabbitmq as mq_mod
-from app.models.order import Order, OrderEvent, OrderStatus, PlaceOrderRequest
+from app.models.order import Order, OrderEvent, OrderStatus, PlaceOrderRequest, UpdateOrderRequest
 from app.repositories.order_repository import OrderRepository
 from app.repositories.inventory_repository import InventoryRepository
 
@@ -21,7 +20,7 @@ class OrderService:
 
 # For Employee APIs
     # ── Place Order ────────────────────────────────────────────
-    async def place_order(self, req: PlaceOrderRequest, employee_id: int) -> dict:
+    async def create_order(self, req: PlaceOrderRequest, employee_id: int) -> dict:
         today = date.today().isoformat()
 
         # Step 1: Atomic DECR in Redis (Lua script) — prevents oversell
@@ -123,6 +122,60 @@ class OrderService:
             raise HTTPException(status_code=403, detail="Not your order")
 
         return await self._overlay_live_status(order)
+
+    async def get_order_for_actor(self, order_id: str, actor: dict) -> Order:
+        order = await self.order_repo.get_by_id(order_id)
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+
+        role = actor["role"]
+        user_id = actor["user_id"]
+        if role == "employee" and order.employee_id != user_id:
+            raise HTTPException(status_code=403, detail="Not your order")
+        if role == "vendor" and order.vendor_id != user_id:
+            raise HTTPException(status_code=403, detail="Not your vendor order")
+        if role not in ("employee", "vendor", "admin"):
+            raise HTTPException(status_code=403, detail="Unsupported role")
+
+        return await self._overlay_live_status(order)
+
+    async def update_order(self, order_id: str, actor: dict, payload: UpdateOrderRequest) -> Order:
+        order = await self.order_repo.get_by_id(order_id)
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+
+        role = actor["role"]
+        user_id = actor["user_id"]
+        has_status_update = payload.status is not None or payload.action is not None
+
+        if role == "employee":
+            if order.employee_id != user_id:
+                raise HTTPException(status_code=403, detail="Not your order")
+            if payload.quantity is not None and not has_status_update:
+                await self._update_order_quantity(order, payload.quantity)
+                return await self.get_order_for_actor(order_id, actor)
+            next_status = self._resolve_next_status(payload)
+            if next_status != OrderStatus.cancelled:
+                raise HTTPException(status_code=403, detail="Employees can only cancel orders")
+            await self.cancel_order(order_id, employee_id=user_id)
+        elif role == "vendor":
+            if order.vendor_id != user_id:
+                raise HTTPException(status_code=403, detail="Not your vendor order")
+            next_status = self._resolve_next_status(payload)
+            if next_status != OrderStatus.cancelled:
+                raise HTTPException(status_code=403, detail="Vendors can only reject or cancel orders")
+            await self.cancel_vendor_order(order_id, vendor_id=user_id)
+        elif role == "admin":
+            next_status = self._resolve_next_status(payload)
+            if next_status == OrderStatus.cancelled:
+                await self._cancel_loaded_order(order, actor)
+            else:
+                await self.order_repo.update_status(order_id, next_status)
+                await self._cache_status(order_id, next_status)
+        else:
+            raise HTTPException(status_code=403, detail="Unsupported role")
+
+        return await self.get_order_for_actor(order_id, actor)
     
     # ── Today's Order ──────────────────────────────────────────
     async def get_today_order(self, employee_id: int) -> Order:
@@ -137,21 +190,21 @@ class OrderService:
     
 # For Vendor APIs
 
-    async def get_billing(self, order_id: str, vendor_id: int) -> Order:
+    async def get_vendor_order(self, order_id: str, vendor_id: int) -> Order:
         order = await self.order_repo.get_by_id(order_id)
         if not order:
             raise HTTPException(status_code=404, detail="Order not found")
         if order.vendor_id != vendor_id:
-            raise HTTPException(status_code=403, detail="Not your billing order")
+            raise HTTPException(status_code=403, detail="Not your vendor order")
 
         return await self._overlay_live_status(order)
 
-    async def cancel_billing(self, order_id: str, vendor_id: int) -> None:
+    async def cancel_vendor_order(self, order_id: str, vendor_id: int) -> None:
         order = await self.order_repo.get_by_id(order_id)
         if not order:
             raise HTTPException(status_code=404, detail="Order not found")
         if order.vendor_id != vendor_id:
-            raise HTTPException(status_code=403, detail="Not your billing order")
+            raise HTTPException(status_code=403, detail="Not your vendor order")
         if order.status == OrderStatus.cancelled:
             raise HTTPException(status_code=422, detail="Already cancelled")
 
@@ -174,11 +227,11 @@ class OrderService:
         )
         await mq_mod.publish(ORDER_CANCELLED, event.model_dump())
 
-    async def get_billing_today(self, vendor_id: int) -> list[Order]:
+    async def get_vendor_orders_today(self, vendor_id: int) -> list[Order]:
         orders = await self.order_repo.list_today_by_vendor(vendor_id)
         return await self._overlay_live_statuses(orders)
 
-    async def get_billing_history(self, vendor_id: int, from_dt: datetime, to_dt: datetime) -> list[Order]:
+    async def get_vendor_orders_history(self, vendor_id: int, from_dt: datetime, to_dt: datetime) -> list[Order]:
         orders = await self.order_repo.list_by_vendor(vendor_id, from_dt, to_dt)
         return await self._overlay_live_statuses(orders)
 
@@ -193,3 +246,77 @@ class OrderService:
         for order in orders:
             await self._overlay_live_status(order)
         return orders
+
+    def _resolve_next_status(self, payload: UpdateOrderRequest) -> OrderStatus:
+        if payload.status is not None:
+            return payload.status
+
+        if payload.action is None:
+            raise HTTPException(status_code=400, detail="status or action is required")
+
+        action = payload.action.lower()
+        if action in ("cancel", "cancelled", "reject", "rejected"):
+            return OrderStatus.cancelled
+        raise HTTPException(status_code=400, detail="Unsupported action")
+
+    async def _cache_status(self, order_id: str, status_value: OrderStatus) -> None:
+        rdb = rdb_mod.get_redis()
+        await rdb.set(rdb_mod.order_status_key(order_id), status_value.value, ex=86400)
+
+    async def _update_order_quantity(self, order: Order, quantity: int) -> None:
+        if order.status == OrderStatus.cancelled:
+            raise HTTPException(status_code=422, detail="Cannot update cancelled order")
+        if quantity == order.quantity:
+            return
+
+        diff = quantity - order.quantity
+        today = date.today()
+        today_str = today.isoformat()
+
+        if diff > 0:
+            reserved = 0
+            try:
+                for _ in range(diff):
+                    remaining = await rdb_mod.decr_inventory(order.menu_id, today_str)
+                    if remaining < 0:
+                        raise HTTPException(status_code=404, detail="Inventory not found")
+                    if remaining <= 0:
+                        raise HTTPException(status_code=409, detail="Out of stock")
+                    reserved += 1
+            except HTTPException:
+                for _ in range(reserved):
+                    await rdb_mod.incr_inventory(order.menu_id, today_str)
+                raise
+            await self.inventory_repo.decrement(order.menu_id, today, diff)
+        else:
+            restore_qty = abs(diff)
+            for _ in range(restore_qty):
+                await rdb_mod.incr_inventory(order.menu_id, today_str)
+            await self.inventory_repo.increment(order.menu_id, today, restore_qty)
+
+        await self.order_repo.update_quantity(
+            order.id,
+            quantity,
+            order.price_snapshot * quantity,
+        )
+
+    async def _cancel_loaded_order(self, order: Order, actor: dict) -> None:
+        if order.status == OrderStatus.cancelled:
+            raise HTTPException(status_code=422, detail="Already cancelled")
+
+        await self.order_repo.update_status(order.id, OrderStatus.cancelled)
+
+        today = date.today().isoformat()
+        await rdb_mod.incr_inventory(order.menu_id, today)
+        await self.inventory_repo.increment(order.menu_id, date.today(), order.quantity)
+        await self._cache_status(order.id, OrderStatus.cancelled)
+
+        event = OrderEvent(
+            event=ORDER_CANCELLED,
+            order_id=order.id,
+            employee_id=order.employee_id,
+            vendor_id=order.vendor_id,
+            menu_id=order.menu_id,
+            timestamp=int(time.time()),
+        )
+        await mq_mod.publish(ORDER_CANCELLED, event.model_dump())

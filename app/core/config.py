@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     RABBITMQ_URL: str = "amqp://guest:guest@localhost:5672/"
     JWT_SECRET: str = "supersecret_change_me"
     JWT_ALGORITHM: str = "HS256"
+    TEST_REPORT_DIR: str = "./reports"
 
     class Config:
         env_file = ".env"

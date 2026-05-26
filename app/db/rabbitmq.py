@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from typing import Callable, Awaitable
+from typing import Callable, Awaitable, Optional
 
 import aio_pika
 from aio_pika import ExchangeType, Message, DeliveryMode
@@ -13,9 +13,9 @@ ORDER_EXCHANGE = "order_events"
 ORDER_CREATED_QUEUE = "order.created"
 ORDER_CANCELLED_QUEUE = "order.cancelled"
 
-_connection: aio_pika.RobustConnection | None = None
-_channel: aio_pika.RobustChannel | None = None
-_exchange: aio_pika.Exchange | None = None
+_connection: Optional[aio_pika.RobustConnection] = None
+_channel: Optional[aio_pika.RobustChannel] = None
+_exchange: Optional[aio_pika.Exchange] = None
 
 
 async def init_rabbitmq():

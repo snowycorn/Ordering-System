@@ -35,6 +35,6 @@ async def set_inventory(
     svc: InventoryService = Depends(get_service),
 ):
     if user["role"] not in ("vendor", "admin"):
-        raise HTTPException(status_code=403, detail="Only vendors can set inventory")
+        raise HTTPException(status_code=403, detail="Only vendors and admins can set inventory")
     await svc.set_inventory(menu_id, req.date, req.quantity)
     return {"message": "inventory updated", "menu_id": menu_id, "date": req.date, "quantity": req.quantity}

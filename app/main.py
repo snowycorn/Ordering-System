@@ -12,7 +12,7 @@ from app.db.rabbitmq import init_rabbitmq, close_rabbitmq
 from app.worker.order_worker import OrderWorker
 from app.api.orders import router as orders_router
 from app.api.inventory import router as inventory_router
-from app.api.billing import router as billing_router
+from app.api.vendor_orders import router as vendor_orders_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -61,8 +61,8 @@ app.add_middleware(
 )
 
 app.include_router(orders_router, prefix="/orders", tags=["orders"])
+app.include_router(vendor_orders_router, prefix="/vendor/orders", tags=["vendor-orders"])
 app.include_router(inventory_router, prefix="/inventory", tags=["inventory"])
-app.include_router(billing_router, prefix="/billing", tags=["billing"])
 
 
 @app.get("/health", tags=["system"])

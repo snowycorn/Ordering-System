@@ -16,20 +16,22 @@ def get_service() -> OrderService:
 
 def require_vendor(user: dict) -> None:
     if user["role"] not in ("vendor", "admin"):
-        raise HTTPException(status_code=403, detail="Only vendors can access billing")
+        raise HTTPException(status_code=403, detail="Only vendors can access vendor orders")
 
-# /billing/today_billing
-@router.get("/today_billing", response_model=list[Order])
-async def get_today_billing(
+
+# GET /vendor/orders/today
+@router.get("/today", response_model=list[Order])
+async def get_vendor_orders_today(
     user: Annotated[dict, Depends(get_current_user)],
     svc: OrderService = Depends(get_service),
 ):
     require_vendor(user)
-    return await svc.get_billing_today(vendor_id=user["user_id"])
+    return await svc.get_vendor_orders_today(vendor_id=user["user_id"])
 
 
-@router.get("/billing_history")
-async def get_billing_history(
+# GET /vendor/orders/history?from=2024-01-01&to=2024-01-31
+@router.get("/history")
+async def get_vendor_orders_history(
     user: Annotated[dict, Depends(get_current_user)],
     svc: OrderService = Depends(get_service),
     from_date: str = Query(default=None, alias="from"),
@@ -41,26 +43,5 @@ async def get_billing_history(
     from_dt = datetime.fromisoformat(from_date) if from_date else now - timedelta(days=30)
     to_dt = datetime.fromisoformat(to_date) if to_date else now
 
-    orders = await svc.get_billing_history(user["user_id"], from_dt, to_dt)
+    orders = await svc.get_vendor_orders_history(user["user_id"], from_dt, to_dt)
     return {"orders": orders, "count": len(orders)}
-
-
-@router.get("/{order_id}", response_model=Order)
-async def get_billing_order(
-    order_id: str,
-    user: Annotated[dict, Depends(get_current_user)],
-    svc: OrderService = Depends(get_service),
-):
-    require_vendor(user)
-    return await svc.get_billing(order_id, vendor_id=user["user_id"])
-
-
-@router.delete("/cancel/{order_id}")
-async def cancel_billing_order(
-    order_id: str,
-    user: Annotated[dict, Depends(get_current_user)],
-    svc: OrderService = Depends(get_service),
-):
-    require_vendor(user)
-    await svc.cancel_billing(order_id, vendor_id=user["user_id"])
-    return {"message": "billing order cancelled"}
