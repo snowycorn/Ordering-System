@@ -57,7 +57,8 @@ Service layer
 | `GET` | `/orders/me` | 查目前登入員工今日訂單 |
 | `GET` | `/orders/me/history` | 查目前登入員工歷史訂單 |
 | `GET` | `/orders/{order_id}` | 依角色查單筆訂單 |
-| `PATCH` | `/orders/{order_id}` | 更新訂單狀態 |
+| `PATCH` | `/orders/{order_id}/cancel` | 員工取消自己的訂單 |
+| `PATCH` | `/orders/{order_id}/quantity` | 員工修改自己的訂單數量 |
 
 建立訂單：
 
@@ -72,13 +73,9 @@ Service layer
 }
 ```
 
-更新訂單狀態：
+員工取消訂單：
 
-```json
-{
-  "status": "cancelled"
-}
-```
+無 request body。
 
 員工修改訂單數量：
 
@@ -88,11 +85,12 @@ Service layer
 }
 ```
 
-`PATCH /orders/{order_id}` 由 `OrderService.update_order(order_id, actor, payload)` 統一處理：
+`PATCH /orders/{order_id}/cancel` 由 `OrderService.cancel_order(order_id, employee_id)` 處理，
+`PATCH /orders/{order_id}/quantity` 由 `OrderService.update_order_quantity(order_id, employee_id, quantity)` 處理：
 
 - `employee`：可以取消自己的訂單，或修改自己的訂單數量。
-- `vendor`：只能 reject/cancel 自己收到的訂單。
-- `admin`：可以更新任意訂單狀態。
+- `vendor`：在 `vendor/orders` 路由下可 reject 自己收到的訂單。
+- `admin`：仍可透過共用查詢路由讀取訂單。
 
 ### Vendor Orders
 
@@ -102,6 +100,7 @@ Service layer
 | --- | --- | --- |
 | `GET` | `/vendor/orders/today` | 商家查今日收到的訂單 |
 | `GET` | `/vendor/orders/history` | 商家查歷史收到的訂單 |
+| `PATCH` | `/vendor/orders/{order_id}/reject` | 商家拒絕訂單 |
 
 只有 `vendor` 和 `admin` 可以使用。
 
@@ -152,13 +151,27 @@ RabbitMQ order.created
 取消 / reject / 更新狀態：
 
 ```text
-PATCH /orders/{order_id}
+PATCH /orders/{order_id}/cancel
   -> app/api/orders.py
-  -> OrderService.update_order(order_id, actor, payload)
-  -> 依 role 檢查權限
+  -> OrderService.cancel_order(order_id, employee_id)
   -> 更新 PostgreSQL status
   -> 更新 Redis status
   -> 必要時補回 inventory
+  -> publish order.cancelled
+
+PATCH /orders/{order_id}/quantity
+  -> app/api/orders.py
+  -> OrderService.update_order_quantity(order_id, employee_id, quantity)
+  -> 檢查是否為本人訂單
+  -> 重新計算數量與總價
+  -> 同步 Redis / PostgreSQL 庫存
+
+PATCH /vendor/orders/{order_id}/reject
+  -> app/api/vendor_orders.py
+  -> OrderService.reject_vendor_order(order_id, vendor_id)
+  -> 更新 PostgreSQL status
+  -> 更新 Redis status
+  -> 補回 inventory
   -> publish order.cancelled
 ```
 

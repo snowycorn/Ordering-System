@@ -32,6 +32,7 @@ class FakeOrderService:
     def __init__(self):
         self.today_call = None
         self.history_call = None
+        self.reject_call = None
 
     async def get_vendor_orders_today(self, vendor_id: int) -> list[dict]:
         self.today_call = vendor_id
@@ -43,6 +44,10 @@ class FakeOrderService:
             order_payload(order_id=ORDER_ID, status="confirmed", quantity=1),
             order_payload(order_id=HISTORY_ORDER_ID, status="cancelled", quantity=2),
         ]
+
+    async def reject_vendor_order(self, order_id: str, vendor_id: int) -> dict:
+        self.reject_call = (order_id, vendor_id)
+        return order_payload(order_id=order_id, status="cancelled")
 
 
 @contextmanager
@@ -102,3 +107,16 @@ def test_employee_cannot_get_vendor_orders():
         assert response.status_code == 403
         assert response.json() == {"detail": "Only vendors can access vendor orders"}
         assert service.today_call is None
+
+
+def test_vendor_can_reject_order():
+    # arrange: an authenticated vendor and a fake order service
+    with make_client({"user_id": 7, "role": "vendor"}) as (client, service):
+        # act: receive a PATCH /vendor/orders/{order_id}/reject request
+        response = client.patch(f"/vendor/orders/{ORDER_ID}/reject")
+
+        # assert: response should be status code 200 and call the reject method
+        assert response.status_code == 200
+        assert response.json()["id"] == ORDER_ID
+        assert response.json()["status"] == "cancelled"
+        assert service.reject_call == (ORDER_ID, 7)

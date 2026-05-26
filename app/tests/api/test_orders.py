@@ -35,7 +35,8 @@ class FakeOrderService:
         self.create_order_call = None
         self.history_call = None
         self.get_order_call = None
-        self.update_order_call = None
+        self.cancel_order_call = None
+        self.update_quantity_call = None
         self.create_order_error = None
 
     async def create_order(self, req, employee_id: int) -> dict:
@@ -58,19 +59,18 @@ class FakeOrderService:
         self.get_order_call = (order_id, actor)
         return order_payload(order_id)
 
-    async def update_order(self, order_id: str, actor: dict, payload) -> dict:
-        self.update_order_call = (order_id, actor, payload)
-        if payload.status is None and payload.action is None and payload.quantity is None:
-            raise HTTPException(status_code=400, detail="status or action is required")
+    async def update_order_quantity(self, order_id: str, employee_id: int, quantity: int) -> dict:
+        self.update_quantity_call = (order_id, employee_id, quantity)
         updated = order_payload(order_id)
-        if payload.status is not None:
-            updated["status"] = payload.status.value
-        elif payload.action in ("cancel", "reject"):
-            updated["status"] = "cancelled"
-        elif payload.quantity is not None:
-            updated["quantity"] = payload.quantity
-            updated["total_price"] = 120 * payload.quantity
+        updated["quantity"] = quantity
+        updated["total_price"] = 120 * quantity
         return updated
+
+    async def cancel_order(self, order_id: str, employee_id: int) -> None:
+        self.cancel_order_call = (order_id, employee_id)
+
+    async def reject_vendor_order(self, order_id: str, vendor_id: int) -> dict:
+        raise HTTPException(status_code=500, detail="not used in employee tests")
 
 
 @contextmanager
@@ -189,49 +189,30 @@ def test_get_order_uses_actor_context():
         assert service.get_order_call == (OTHER_ORDER_ID, {"user_id": 7, "role": "vendor"})
 
 
-def test_patch_order_updates_status_through_service():
+def test_employee_can_cancel_own_order():
     # arrange: an authenticated employee and a fake order service
     with make_client({"user_id": 1, "role": "employee"}) as (client, service):
-        # act: receive a PATCH /orders/{order_id} request
-        response = client.patch(f"/orders/{OTHER_ORDER_ID}", json={"status": "cancelled"})
+        # act: receive a PATCH /orders/{order_id}/cancel request
+        response = client.patch(f"/orders/{OTHER_ORDER_ID}/cancel")
 
-        # assert: response should return the updated status and pass the payload to the service
-        order_id, actor, payload = service.update_order_call
+        # assert: response should return the current order and call the cancel method
         assert response.status_code == 200
-        assert response.json()["status"] == "cancelled"
-        assert order_id == OTHER_ORDER_ID
-        assert actor == {"user_id": 1, "role": "employee"}
-        assert payload.status.value == "cancelled"
+        assert response.json()["id"] == OTHER_ORDER_ID
+        assert response.json()["status"] == "confirmed"
+        assert service.cancel_order_call == (OTHER_ORDER_ID, 1)
 
 
 def test_employee_can_update_order_quantity_through_patch():
     # arrange: an authenticated employee and a fake order service
     with make_client({"user_id": 1, "role": "employee"}) as (client, service):
-        # act: receive a PATCH /orders/{order_id} request with quantity only
-        response = client.patch(f"/orders/{OTHER_ORDER_ID}", json={"quantity": 3})
+        # act: receive a PATCH /orders/{order_id}/quantity request with quantity only
+        response = client.patch(f"/orders/{OTHER_ORDER_ID}/quantity", json={"quantity": 3})
 
         # assert: response should be status code 200 and return the updated quantity
-        order_id, actor, payload = service.update_order_call
+        order_id, employee_id, quantity = service.update_quantity_call
         assert response.status_code == 200
         assert response.json()["quantity"] == 3
         assert response.json()["total_price"] == 360
         assert order_id == OTHER_ORDER_ID
-        assert actor == {"user_id": 1, "role": "employee"}
-        assert payload.status is None
-        assert payload.action is None
-        assert payload.quantity == 3
-
-
-def test_vendor_can_cancel_order_through_patch():
-    # arrange: an authenticated vendor and a fake order service
-    with make_client({"user_id": 7, "role": "vendor"}) as (client, service):
-        # act: receive a PATCH /orders/{order_id} request to cancel the order
-        response = client.patch(f"/orders/{OTHER_ORDER_ID}", json={"status": "cancelled"})
-
-        # assert: response should be status code 200 and pass the vendor actor to the service
-        order_id, actor, payload = service.update_order_call
-        assert response.status_code == 200
-        assert response.json()["status"] == "cancelled"
-        assert order_id == OTHER_ORDER_ID
-        assert actor == {"user_id": 7, "role": "vendor"}
-        assert payload.status.value == "cancelled"
+        assert employee_id == 1
+        assert quantity == 3

@@ -176,6 +176,18 @@ class OrderService:
             raise HTTPException(status_code=403, detail="Unsupported role")
 
         return await self.get_order_for_actor(order_id, actor)
+
+    async def update_order_quantity(self, order_id: str, employee_id: int, quantity: int) -> Order:
+        order = await self.order_repo.get_by_id(order_id)
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        if order.employee_id != employee_id:
+            raise HTTPException(status_code=403, detail="Not your order")
+
+        await self._update_order_quantity(order, quantity)
+        order.quantity = quantity
+        order.total_price = order.price_snapshot * quantity
+        return await self._overlay_live_status(order)
     
     # ── Today's Order ──────────────────────────────────────────
     async def get_today_order(self, employee_id: int) -> Order:
@@ -226,6 +238,10 @@ class OrderService:
             timestamp=int(time.time()),
         )
         await mq_mod.publish(ORDER_CANCELLED, event.model_dump())
+
+    async def reject_vendor_order(self, order_id: str, vendor_id: int) -> Order:
+        await self.cancel_vendor_order(order_id, vendor_id)
+        return await self.get_vendor_order(order_id, vendor_id)
 
     async def get_vendor_orders_today(self, vendor_id: int) -> list[Order]:
         orders = await self.order_repo.list_today_by_vendor(vendor_id)

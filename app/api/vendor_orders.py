@@ -45,3 +45,14 @@ async def get_vendor_orders_history(
 
     orders = await svc.get_vendor_orders_history(user["user_id"], from_dt, to_dt)
     return {"orders": orders, "count": len(orders)}
+
+
+# PATCH /vendor/orders/{order_id}/reject
+@router.patch("/{order_id}/reject", response_model=Order)
+async def reject_vendor_order(
+    order_id: str,
+    user: Annotated[dict, Depends(get_current_user)],
+    svc: OrderService = Depends(get_service),
+):
+    require_vendor(user)
+    return await svc.reject_vendor_order(order_id, vendor_id=user["user_id"])
