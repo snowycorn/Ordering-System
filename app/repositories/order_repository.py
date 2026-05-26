@@ -1,0 +1,107 @@
+from datetime import date, datetime, timezone
+from typing import Optional
+
+import asyncpg
+
+from app.db.postgres import get_pool
+from app.models.order import Order, OrderStatus
+
+
+class OrderRepository:
+
+    async def create(self, order: Order) -> None:
+        pool = get_pool()
+        await pool.execute(
+            """
+            INSERT INTO orders
+                (id, employee_id, vendor_id, menu_id, menu_name, price_snapshot,
+                 quantity, total_price, order_date, pickup_date, status, created_at)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+            """,
+            order.id, order.employee_id, order.vendor_id, order.menu_id,
+            order.menu_name, order.price_snapshot, order.quantity,
+            order.total_price, order.order_date, order.pickup_date,
+            order.status.value, order.created_at,
+        )
+
+    async def get_by_id(self, order_id: str) -> Optional[Order]:
+        pool = get_pool()
+        row = await pool.fetchrow(
+            """
+            SELECT id, employee_id, vendor_id, menu_id, menu_name, price_snapshot,
+                   quantity, total_price, order_date, pickup_date, status, created_at
+            FROM orders WHERE id = $1
+            """,
+            order_id,
+        )
+        return Order(**dict(row)) if row else None
+
+    async def update_status(self, order_id: str, status: OrderStatus) -> bool:
+        pool = get_pool()
+        result = await pool.execute(
+            "UPDATE orders SET status = $1 WHERE id = $2",
+            status.value, order_id,
+        )
+        return result == "UPDATE 1"
+
+    async def list_by_employee(
+        self, employee_id: int, from_dt: datetime, to_dt: datetime
+    ) -> list[Order]:
+        pool = get_pool()
+        rows = await pool.fetch(
+            """
+            SELECT id, employee_id, vendor_id, menu_id, menu_name, price_snapshot,
+                   quantity, total_price, order_date, pickup_date, status, created_at
+            FROM orders
+            WHERE employee_id = $1 AND created_at BETWEEN $2 AND $3
+            ORDER BY created_at DESC
+            """,
+            employee_id, from_dt, to_dt,
+        )
+        return [Order(**dict(r)) for r in rows]
+
+    async def list_by_vendor(
+        self, vendor_id: int, from_dt: datetime, to_dt: datetime
+    ) -> list[Order]:
+        pool = get_pool()
+        rows = await pool.fetch(
+            """
+            SELECT id, employee_id, vendor_id, menu_id, menu_name, price_snapshot,
+                   quantity, total_price, order_date, pickup_date, status, created_at
+            FROM orders
+            WHERE vendor_id = $1 AND created_at BETWEEN $2 AND $3
+            ORDER BY created_at DESC
+            """,
+            vendor_id, from_dt, to_dt,
+        )
+        return [Order(**dict(r)) for r in rows]
+
+    async def get_today_order(self, employee_id: int) -> Optional[Order]:
+        pool = get_pool()
+        row = await pool.fetchrow(
+            """
+            SELECT id, employee_id, vendor_id, menu_id, menu_name, price_snapshot,
+                   quantity, total_price, order_date, pickup_date, status, created_at
+            FROM orders
+            WHERE employee_id = $1 AND order_date = CURRENT_DATE
+              AND status != 'cancelled'
+            ORDER BY created_at DESC LIMIT 1
+            """,
+            employee_id,
+        )
+        return Order(**dict(row)) if row else None
+
+    async def list_today_by_vendor(self, vendor_id: int) -> list[Order]:
+        pool = get_pool()
+        rows = await pool.fetch(
+            """
+            SELECT id, employee_id, vendor_id, menu_id, menu_name, price_snapshot,
+                   quantity, total_price, order_date, pickup_date, status, created_at
+            FROM orders
+            WHERE vendor_id = $1 AND order_date = CURRENT_DATE
+              AND status != 'cancelled'
+            ORDER BY created_at DESC
+            """,
+            vendor_id,
+        )
+        return [Order(**dict(r)) for r in rows]
