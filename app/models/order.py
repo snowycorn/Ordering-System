@@ -76,5 +76,6 @@ class OrderEvent(BaseModel):
     menu_name: str = ""
     price: int = 0
     quantity: int = 1
+    pickup_date: str = ""
     status: OrderStatus = OrderStatus.pending
     timestamp: int

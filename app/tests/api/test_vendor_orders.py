@@ -30,16 +30,11 @@ def order_payload(order_id: str = ORDER_ID, status: str = "confirmed", quantity:
 
 class FakeOrderService:
     def __init__(self):
-        self.today_call = None
-        self.history_call = None
+        self.orders_call = None
         self.reject_call = None
 
-    async def get_vendor_orders_today(self, vendor_id: int) -> list[dict]:
-        self.today_call = vendor_id
-        return [order_payload()]
-
-    async def get_vendor_orders_history(self, vendor_id: int, from_dt: datetime, to_dt: datetime) -> list[dict]:
-        self.history_call = (vendor_id, from_dt, to_dt)
+    async def get_vendor_orders(self, vendor_id: int, from_date, to_date, status: str | None = None) -> list[dict]:
+        self.orders_call = (vendor_id, from_date, to_date, status)
         return [
             order_payload(order_id=ORDER_ID, status="confirmed", quantity=1),
             order_payload(order_id=HISTORY_ORDER_ID, status="cancelled", quantity=2),
@@ -66,47 +61,73 @@ def make_client(user: dict):
 def test_vendor_can_get_today_orders():
     # arrange: an authenticated vendor and a fake order service
     with make_client({"user_id": 7, "role": "vendor"}) as (client, service):
-        # act: receive a GET /vendor/orders/today request
-        response = client.get("/vendor/orders/today")
+        # act: receive a GET /vendor/orders?range=today request
+        response = client.get("/vendor/orders", params={"range": "today"})
 
         # assert: response should be status code 200 and use the vendor id
         assert response.status_code == 200
-        assert response.json()[0]["id"] == ORDER_ID
-        assert service.today_call == 7
+        vendor_id, from_date, to_date, status = service.orders_call
+        assert response.json()["range"] == "today"
+        assert response.json()["count"] == 2
+        assert response.json()["orders"][0]["id"] == ORDER_ID
+        assert vendor_id == 7
+        assert from_date == date(2026, 5, 27)
+        assert to_date == date(2026, 5, 27)
+        assert status is None
 
 
 def test_admin_can_get_vendor_order_history():
     # arrange: an authenticated admin and a fake order service
     with make_client({"user_id": 7, "role": "admin"}) as (client, service):
-        # act: receive a GET /vendor/orders/history request
-        response = client.get(
-            "/vendor/orders/history",
-            params={"from": "2026-05-01T00:00:00+00:00", "to": "2026-05-31T00:00:00+00:00"},
-        )
+        # act: receive a GET /vendor/orders?range=history request
+        response = client.get("/vendor/orders", params={"range": "history"})
 
         # assert: response should include orders, count, and parsed date filters
-        vendor_id, from_dt, to_dt = service.history_call
+        vendor_id, from_date, to_date, status = service.orders_call
         assert response.status_code == 200
         assert response.json()["count"] == 2
         assert [order["id"] for order in response.json()["orders"]] == [ORDER_ID, HISTORY_ORDER_ID]
         assert response.json()["orders"][1]["status"] == "cancelled"
         assert response.json()["orders"][1]["quantity"] == 2
         assert response.json()["orders"][1]["total_price"] == 240
+        assert response.json()["range"] == "history"
         assert vendor_id == 7
-        assert from_dt == datetime(2026, 5, 1, tzinfo=timezone.utc)
-        assert to_dt == datetime(2026, 5, 31, tzinfo=timezone.utc)
+        assert from_date is None
+        assert to_date == date(2026, 5, 27)
+        assert status is None
+
+
+def test_vendor_can_get_custom_range_and_status():
+    # arrange: an authenticated vendor and a fake order service
+    with make_client({"user_id": 7, "role": "vendor"}) as (client, service):
+        # act: receive a GET /vendor/orders request with custom filters
+        response = client.get(
+            "/vendor/orders",
+            params={"from": "2026-05-01", "to": "2026-05-31", "status": "completed"},
+        )
+
+        # assert: response should include the parsed custom filters
+        vendor_id, from_date, to_date, status = service.orders_call
+        assert response.status_code == 200
+        assert response.json()["range"] == "custom"
+        assert response.json()["status"] == "completed"
+        assert response.json()["count"] == 2
+        assert vendor_id == 7
+        assert from_date == date(2026, 5, 1)
+        assert to_date == date(2026, 5, 31)
+        assert status == "completed"
 
 
 def test_employee_cannot_get_vendor_orders():
     # arrange: an authenticated employee and a fake order service
     with make_client({"user_id": 1, "role": "employee"}) as (client, service):
-        # act: receive a GET /vendor/orders/today request
-        response = client.get("/vendor/orders/today")
+        # act: receive a GET /vendor/orders request
+        response = client.get("/vendor/orders")
 
         # assert: response should be status code 403 and not call the service
         assert response.status_code == 403
         assert response.json() == {"detail": "Only vendors can access vendor orders"}
-        assert service.today_call is None
+        assert service.orders_call is None
 
 
 def test_vendor_can_reject_order():

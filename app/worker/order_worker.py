@@ -31,6 +31,7 @@ class OrderWorker:
         order_id = payload.get("order_id", "")
         try:
             now = datetime.now(timezone.utc)
+            pickup_date = date.fromisoformat(payload["pickup_date"])
             order = Order(
                 id=order_id,
                 employee_id=payload["employee_id"],
@@ -41,7 +42,7 @@ class OrderWorker:
                 quantity=payload.get("quantity", 1),
                 total_price=payload.get("price", 0) * payload.get("quantity", 1),
                 order_date=now.date(),
-                pickup_date=now.date(),
+                pickup_date=pickup_date,
                 status=OrderStatus.confirmed,
                 created_at=now,
             )
@@ -49,9 +50,8 @@ class OrderWorker:
             # Write to PostgreSQL
             await self.order_repo.create(order)
 
-            # Decrement DB inventory (Redis already decremented atomically)
-            today = date.today()
-            await self.inventory_repo.decrement(payload["menu_id"], today, payload.get("quantity", 1))
+            # Decrement DB inventory for the pickup date (Redis already decremented atomically)
+            await self.inventory_repo.decrement(payload["menu_id"], pickup_date, payload.get("quantity", 1))
 
             # Update live status in Redis: pending → confirmed
             rdb = rdb_mod.get_redis()

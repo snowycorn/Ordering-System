@@ -1,6 +1,6 @@
 # Order & Inventory Service
 
-Order & Inventory Service 是一個 FastAPI 服務，負責員工訂餐、商家查看訂單、庫存管理，以及透過 RabbitMQ worker 非同步寫入訂單資料。
+Order & Inventory Service 是一個 FastAPI 服務，負責員工訂餐、商家查看訂單、庫存管理，並透過 RabbitMQ worker 非同步寫入訂單資料與更新日別庫存（`pickup_date`）。
 
 ## 架構
 
@@ -27,7 +27,7 @@ Service layer
 - `app/repositories/`：PostgreSQL 存取層。
 - `app/db/`：PostgreSQL、Redis、RabbitMQ client 初始化與 helper。
 - `app/models/`：Pydantic request/response model 與 event schema。
-- `app/worker/`：RabbitMQ consumer，處理非同步訂單建立流程。
+- `app/worker/`：RabbitMQ consumer，處理非同步訂單建立流程（消費 `order.created` 事件、寫入 `orders`、更新 `daily_inventory`，並把 Redis 上的訂單狀態從 `pending` 變成 `confirmed`）。
 - `app/tests/`：pytest 測試，目前主要覆蓋 API router。
 
 ## API
@@ -51,16 +51,17 @@ Service layer
 
 檔案：[app/api/orders.py](app/api/orders.py)
 
+主要路由（已合併為可用 `range/from/to` 查詢的單一介面）：
+
 | Method | Path | 說明 |
 | --- | --- | --- |
-| `POST` | `/orders` | 建立訂單 |
-| `GET` | `/orders/me` | 查目前登入員工今日訂單 |
-| `GET` | `/orders/me/history` | 查目前登入員工歷史訂單 |
-| `GET` | `/orders/{order_id}` | 依角色查單筆訂單 |
-| `PATCH` | `/orders/{order_id}/cancel` | 員工取消自己的訂單 |
-| `PATCH` | `/orders/{order_id}/quantity` | 員工修改自己的訂單數量 |
+| `POST` | `/orders` | 建立訂單（會以 `pickup_date` 做日別庫存預扣） |
+| `GET` | `/orders/me` | 查目前登入員工的訂單（支援 `range` / `from` / `to`） |
+| `GET` | `/orders/{order_id}` | 查單筆訂單（依角色回傳不同欄位） |
+| `PATCH` | `/orders/{order_id}/cancel` | 員工取消自己的訂單（受 cutoff 規則限制） |
+| `PATCH` | `/orders/{order_id}/quantity` | 員工修改自己的訂單數量（受 cutoff 規則限制） |
 
-建立訂單：
+建立訂單範例：
 
 ```json
 {
@@ -73,11 +74,7 @@ Service layer
 }
 ```
 
-員工取消訂單：
-
-無 request body。
-
-員工修改訂單數量：
+修改數量範例：
 
 ```json
 {
@@ -85,22 +82,22 @@ Service layer
 }
 ```
 
-`PATCH /orders/{order_id}/cancel` 由 `OrderService.cancel_order(order_id, employee_id)` 處理，
-`PATCH /orders/{order_id}/quantity` 由 `OrderService.update_order_quantity(order_id, employee_id, quantity)` 處理：
+存取控制：
 
-- `employee`：可以取消自己的訂單，或修改自己的訂單數量。
-- `vendor`：在 `vendor/orders` 路由下可 reject 自己收到的訂單。
-- `admin`：仍可透過共用查詢路由讀取訂單。
+- `employee`：可建立、取消或修改自己的訂單（受 cutoff 規則限制）。
+- `vendor`：透過 `/vendor/orders` 查看並可拒單（reject）。
+- `admin`：可讀取或管理所有訂單。
 
 ### Vendor Orders
 
 檔案：[app/api/vendor_orders.py](app/api/vendor_orders.py)
 
+`GET /vendor/orders` 已合併為單一查詢介面，支援 `range` / `from` / `to` / `status`：
+
 | Method | Path | 說明 |
 | --- | --- | --- |
-| `GET` | `/vendor/orders/today` | 商家查今日收到的訂單 |
-| `GET` | `/vendor/orders/history` | 商家查歷史收到的訂單 |
-| `PATCH` | `/vendor/orders/{order_id}/reject` | 商家拒絕訂單 |
+| `GET` | `/vendor/orders` | 商家查詢收到的訂單（支援 `range=upcoming|history|today`，或用 `from`/`to` 指定區間） |
+| `PATCH` | `/vendor/orders/{order_id}/reject` | 商家拒絕特定訂單 |
 
 只有 `vendor` 和 `admin` 可以使用。
 
@@ -132,20 +129,26 @@ Service layer
 POST /orders
   -> app/api/orders.py
   -> OrderService.create_order()
-  -> Redis Lua script 扣庫存
-  -> Redis 寫入 order status = pending
-  -> RabbitMQ publish order.created
+  -> 使用 Redis 的 atomic Lua script (`reserve_inventory`) 對指定 `pickup_date` 做 `DECRBY quantity`
+     - 回傳值語意：
+       - `-2`：指定日的庫存不存在（404）
+       - `-1`：庫存不足（409）
+       - >=0：剩餘數量（成功）
+  -> Redis 寫入 order status = `pending`
+  -> RabbitMQ publish `order.created`（事件含 `pickup_date`）
   -> API 回傳 order queued
 ```
 
 worker 非同步處理：
 
 ```text
+```text
 RabbitMQ order.created
-  -> OrderWorker.handle_created()
-  -> PostgreSQL 寫入 orders
-  -> PostgreSQL 更新 daily_inventory
-  -> Redis order status = confirmed
+  -> OrderWorker.handle_created()（事件內含 `pickup_date`）
+  -> PostgreSQL 寫入 `orders`（包含 `pickup_date`）
+  -> PostgreSQL 更新 `daily_inventory`（以 `pickup_date` 做扣減）
+  -> Redis order status = `confirmed`
+```
 ```
 
 取消 / reject / 更新狀態：
@@ -201,6 +204,8 @@ PATCH /vendor/orders/{order_id}/reject
 - `remaining_quantity`
 
 `daily_inventory` 對 `(menu_id, target_date)` 有 unique constraint。
+
+注意：系統內所有日別庫存與變更皆以 `pickup_date` 為基準（非伺服器當日），請務必在呼叫 API 時帶入正確的 `pickup_date`。
 
 ## Docker
 
@@ -363,8 +368,50 @@ start reports/coverage/index.html
 docker compose up -d --build
 ```
 
+重置 / 清理資料庫與容器：
+
+```bash
+docker compose down -v --remove-orphans
+```
+
+當需要移除特定 volume（如 postgres 資料）時，可列出再刪除：
+
+```bash
+docker volume ls
+docker volume rm <volume_name>
+```
+
+Debug 與常見問題排查：
+
+- 若 API 回傳 500，先檢查 `uvicorn` 日誌與 stacktrace（container logs 或 systemd journal）。
+- 若出現 Redis 相關錯誤（例如 `get_redis()` 回傳未初始化），確認 `order-service` lifespan 是否有成功初始化 Redis，或檢查 `REDIS_URL` 與容器網路。 
+- 若 RabbitMQ publish/consume 失敗，確認 `RABBITMQ_URL` 與 management UI（http://localhost:15672）。
+- 若 vendor orders 回 500，檢查是否為 code-side 缺少 service method 或 handler（最近已合併 API，若遇錯誤請同步 pull 最新程式）。
+
+開發者建議：在修改與部署後，先用 `docker compose logs -f order-service` 與 `docker compose logs -f order-service-test`（若使用測試 profile）追蹤啟動與 worker log。
+
 只跑測試並輸出本機 report：
 
 ```bash
 docker compose --profile test run --rm --build order-service-test
+```
+
+### WSL 壓測環境
+
+如果你是在 WSL 執行 `stress_test.py`，建議先建立虛擬環境再安裝套件，避免遇到 Debian/Ubuntu 的 externally-managed-environment 限制：
+
+```bash
+sudo apt update
+sudo apt install python3-venv
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install httpx
+python3 stress_test.py
+```
+
+如果之後還要再跑一次壓測，先啟用虛擬環境：
+
+```bash
+source .venv/bin/activate
 ```

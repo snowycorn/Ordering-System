@@ -53,35 +53,47 @@ class OrderRepository:
         return result == "UPDATE 1"
 
     async def list_by_employee(
-        self, employee_id: int, from_dt: datetime, to_dt: datetime
+        self, employee_id: int, from_date: Optional[date], to_date: Optional[date]
     ) -> list[Order]:
         pool = get_pool()
-        rows = await pool.fetch(
-            """
-            SELECT id, employee_id, vendor_id, menu_id, menu_name, price_snapshot,
-                   quantity, total_price, order_date, pickup_date, status, created_at
-            FROM orders
-            WHERE employee_id = $1 AND created_at BETWEEN $2 AND $3
-            ORDER BY created_at DESC
-            """,
-            employee_id, from_dt, to_dt,
+        query = (
+            "SELECT id, employee_id, vendor_id, menu_id, menu_name, price_snapshot, "
+            "       quantity, total_price, order_date, pickup_date, status, created_at "
+            "FROM orders WHERE employee_id = $1"
         )
+        args: list[object] = [employee_id]
+
+        if from_date is not None:
+            query += f" AND pickup_date >= ${len(args) + 1}"
+            args.append(from_date)
+        if to_date is not None:
+            query += f" AND pickup_date <= ${len(args) + 1}"
+            args.append(to_date)
+
+        query += " ORDER BY pickup_date DESC, created_at DESC"
+        rows = await pool.fetch(query, *args)
         return [Order(**dict(r)) for r in rows]
 
     async def list_by_vendor(
-        self, vendor_id: int, from_dt: datetime, to_dt: datetime
+        self, vendor_id: int, from_date: Optional[date], to_date: Optional[date]
     ) -> list[Order]:
         pool = get_pool()
-        rows = await pool.fetch(
-            """
-            SELECT id, employee_id, vendor_id, menu_id, menu_name, price_snapshot,
-                   quantity, total_price, order_date, pickup_date, status, created_at
-            FROM orders
-            WHERE vendor_id = $1 AND created_at BETWEEN $2 AND $3
-            ORDER BY created_at DESC
-            """,
-            vendor_id, from_dt, to_dt,
+        query = (
+            "SELECT id, employee_id, vendor_id, menu_id, menu_name, price_snapshot, "
+            "       quantity, total_price, order_date, pickup_date, status, created_at "
+            "FROM orders WHERE vendor_id = $1"
         )
+        args: list[object] = [vendor_id]
+
+        if from_date is not None:
+            query += f" AND pickup_date >= ${len(args) + 1}"
+            args.append(from_date)
+        if to_date is not None:
+            query += f" AND pickup_date <= ${len(args) + 1}"
+            args.append(to_date)
+
+        query += " ORDER BY pickup_date DESC, created_at DESC"
+        rows = await pool.fetch(query, *args)
         return [Order(**dict(r)) for r in rows]
 
     async def get_today_order(self, employee_id: int) -> Optional[Order]:
@@ -91,7 +103,7 @@ class OrderRepository:
             SELECT id, employee_id, vendor_id, menu_id, menu_name, price_snapshot,
                    quantity, total_price, order_date, pickup_date, status, created_at
             FROM orders
-            WHERE employee_id = $1 AND order_date = CURRENT_DATE
+                        WHERE employee_id = $1 AND pickup_date = CURRENT_DATE
               AND status != 'cancelled'
             ORDER BY created_at DESC LIMIT 1
             """,
@@ -106,7 +118,7 @@ class OrderRepository:
             SELECT id, employee_id, vendor_id, menu_id, menu_name, price_snapshot,
                    quantity, total_price, order_date, pickup_date, status, created_at
             FROM orders
-            WHERE vendor_id = $1 AND order_date = CURRENT_DATE
+                        WHERE vendor_id = $1 AND pickup_date = CURRENT_DATE
               AND status != 'cancelled'
             ORDER BY created_at DESC
             """,

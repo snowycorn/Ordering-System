@@ -61,6 +61,25 @@ if not cur then return -1 end
 return redis.call('INCR', key)
 """
 
+# Returns: remaining stock after reserve, -1 if not enough, -2 if key missing
+RESERVE_INVENTORY_SCRIPT = """
+local key = KEYS[1]
+local qty = tonumber(ARGV[1])
+
+local stock = tonumber(redis.call('GET', key) or '-1')
+
+if stock == -1 then
+    return -2
+end
+
+if stock < qty then
+    return -1
+end
+
+redis.call('DECRBY', key, qty)
+return stock - qty
+"""
+
 
 async def decr_inventory(menu_id: int, date: str) -> int:
     """Atomically decrement inventory. Returns remaining stock, 0=sold out, -1=not set."""
@@ -75,4 +94,12 @@ async def incr_inventory(menu_id: int, date: str) -> int:
     rdb = get_redis()
     key = inventory_key(menu_id, date)
     result = await rdb.eval(INCR_INVENTORY_SCRIPT, 1, key)
+    return int(result)
+
+
+async def reserve_inventory(menu_id: int, date: str, quantity: int) -> int:
+    """Atomically reserve quantity units. Returns remaining stock, -1=not enough, -2=not set."""
+    rdb = get_redis()
+    key = inventory_key(menu_id, date)
+    result = await rdb.eval(RESERVE_INVENTORY_SCRIPT, 1, key, quantity)
     return int(result)

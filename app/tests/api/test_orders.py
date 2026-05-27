@@ -33,7 +33,7 @@ def order_payload(order_id: str = ORDER_ID, status: str = "confirmed", quantity:
 class FakeOrderService:
     def __init__(self):
         self.create_order_call = None
-        self.history_call = None
+        self.orders_call = None
         self.get_order_call = None
         self.cancel_order_call = None
         self.update_quantity_call = None
@@ -48,8 +48,8 @@ class FakeOrderService:
     async def get_today_order(self, employee_id: int) -> dict:
         return order_payload()
 
-    async def get_orders_history(self, employee_id: int, from_dt: datetime, to_dt: datetime) -> list[dict]:
-        self.history_call = (employee_id, from_dt, to_dt)
+    async def get_orders(self, employee_id: int, from_date, to_date) -> list[dict]:
+        self.orders_call = (employee_id, from_date, to_date)
         return [
             order_payload(order_id=ORDER_ID, status="confirmed", quantity=1),
             order_payload(order_id=HISTORY_ORDER_ID, status="cancelled", quantity=2),
@@ -146,26 +146,25 @@ def test_create_order_returns_conflict_when_out_of_stock():
 def test_get_me_returns_current_order():
     # arrange: an authenticated employee and a fake order service
     with make_client() as (client, _):
-        # act: receive a GET /orders/me request
-        response = client.get("/orders/me")
+        # act: receive a GET /orders/me?range=today request
+        response = client.get("/orders/me", params={"range": "today"})
 
         # assert: response should be status code 200 and return the current order
         assert response.status_code == 200
-        assert response.json()["id"] == ORDER_ID
-        assert response.json()["status"] == "confirmed"
+        assert response.json()["range"] == "today"
+        assert response.json()["count"] == 2
+        assert response.json()["orders"][0]["id"] == ORDER_ID
+        assert response.json()["orders"][0]["status"] == "confirmed"
 
 
 def test_get_me_history_returns_orders_and_count():
     # arrange: an authenticated employee and a fake order service
     with make_client() as (client, service):
-        # act: receive a GET /orders/me/history request
-        response = client.get(
-            "/orders/me/history",
-            params={"from": "2026-05-01T00:00:00+00:00", "to": "2026-05-31T00:00:00+00:00"},
-        )
+        # act: receive a GET /orders/me?range=history request
+        response = client.get("/orders/me", params={"range": "history"})
 
         # assert: response should include orders, count, and parsed date filters
-        employee_id, from_dt, to_dt = service.history_call
+        employee_id, from_date, to_date = service.orders_call
         assert response.status_code == 200
         assert response.json()["count"] == 2
         assert [order["id"] for order in response.json()["orders"]] == [ORDER_ID, HISTORY_ORDER_ID]
@@ -173,8 +172,43 @@ def test_get_me_history_returns_orders_and_count():
         assert response.json()["orders"][1]["quantity"] == 2
         assert response.json()["orders"][1]["total_price"] == 240
         assert employee_id == 1
-        assert from_dt == datetime(2026, 5, 1, tzinfo=timezone.utc)
-        assert to_dt == datetime(2026, 5, 31, tzinfo=timezone.utc)
+        assert from_date is None
+        assert to_date == date(2026, 5, 27)
+
+
+def test_get_me_upcoming_uses_open_ended_from_today():
+    # arrange: an authenticated employee and a fake order service
+    with make_client() as (client, service):
+        # act: receive a GET /orders/me?range=upcoming request
+        response = client.get("/orders/me", params={"range": "upcoming"})
+
+        # assert: response should include orders and an open-ended future filter
+        employee_id, from_date, to_date = service.orders_call
+        assert response.status_code == 200
+        assert response.json()["range"] == "upcoming"
+        assert response.json()["count"] == 2
+        assert employee_id == 1
+        assert from_date == date(2026, 5, 27)
+        assert to_date is None
+
+
+def test_get_me_custom_range_uses_query_dates():
+    # arrange: an authenticated employee and a fake order service
+    with make_client() as (client, service):
+        # act: receive a GET /orders/me request with custom date bounds
+        response = client.get(
+            "/orders/me",
+            params={"from": "2026-05-01", "to": "2026-05-31"},
+        )
+
+        # assert: response should include the parsed custom date range
+        employee_id, from_date, to_date = service.orders_call
+        assert response.status_code == 200
+        assert response.json()["range"] == "custom"
+        assert response.json()["count"] == 2
+        assert employee_id == 1
+        assert from_date == date(2026, 5, 1)
+        assert to_date == date(2026, 5, 31)
 
 
 def test_get_order_uses_actor_context():

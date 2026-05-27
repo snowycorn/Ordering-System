@@ -1,6 +1,7 @@
 import time
 import uuid
 from datetime import date, datetime, time as dt_time, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException, status
 
@@ -11,6 +12,7 @@ from app.repositories.inventory_repository import InventoryRepository
 
 ORDER_CREATED = "order.created"
 ORDER_CANCELLED = "order.cancelled"
+TW_TZ = ZoneInfo("Asia/Taipei")
 
 
 class OrderService:
@@ -18,32 +20,28 @@ class OrderService:
         self.order_repo = OrderRepository()
         self.inventory_repo = InventoryRepository()
 
-    def _now_utc(self) -> datetime:
-        return datetime.now(timezone.utc)
+    def _now(self) -> datetime:
+        return datetime.now(TW_TZ)
 
     def _change_deadline(self, pickup_date: date) -> datetime:
         return datetime.combine(
             pickup_date - timedelta(days=1),
-            dt_time(hour=17, tzinfo=timezone.utc),
+            dt_time(hour=17),
+            tzinfo=TW_TZ,
         )
 
     def _ensure_before_change_deadline(self, pickup_date: date, detail: str) -> None:
-        if self._now_utc() > self._change_deadline(pickup_date):
+        if self._now() > self._change_deadline(pickup_date):
             raise HTTPException(status_code=422, detail=detail)
 
 # For Employee APIs
     # ── Place Order ────────────────────────────────────────────
     async def create_order(self, req: PlaceOrderRequest, employee_id: int) -> dict:
         self._ensure_before_change_deadline(req.pickup_date, "Order change deadline passed")
-        today = date.today().isoformat()
+        target_date = req.pickup_date.isoformat()
 
-        # Step 1: Atomic DECR in Redis (Lua script) — prevents oversell
-        remaining = await rdb_mod.decr_inventory(req.menu_id, today)
-        if remaining <= 0:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Out of stock",
-            )
+        # Step 1: Atomically reserve inventory in Redis for requested quantity
+        reserved_qty = await self._reserve_inventory(req.menu_id, target_date, req.quantity)
 
         # Step 2: Build order
         order_id = str(uuid.uuid4())
@@ -77,14 +75,16 @@ class OrderService:
             menu_name=req.menu_name,
             price=req.price,
             quantity=req.quantity,
+            pickup_date=target_date,
             status=OrderStatus.pending,
             timestamp=int(now.timestamp()),
         )
         try:
             await mq_mod.publish(ORDER_CREATED, event.model_dump())
         except Exception as e:
-            # Compensate: restore Redis stock
-            await rdb_mod.incr_inventory(req.menu_id, today)
+            # Compensate: restore all reserved Redis stock for this order
+            for _ in range(reserved_qty):
+                await rdb_mod.incr_inventory(req.menu_id, target_date)
             await rdb.delete(rdb_mod.order_status_key(order_id))
             raise HTTPException(status_code=500, detail=f"Queue error: {e}")
 
@@ -101,14 +101,14 @@ class OrderService:
             raise HTTPException(status_code=422, detail="Already cancelled")
 
         # Business rule: must cancel before 17:00 the day before pickup
-        if self._now_utc() > self._change_deadline(order.pickup_date):
+        if self._now() > self._change_deadline(order.pickup_date):
             raise HTTPException(status_code=422, detail="Cancellation deadline passed")
 
         await self.order_repo.update_status(order_id, OrderStatus.cancelled)
 
-        # Restore Redis inventory
-        today = date.today().isoformat()
-        await rdb_mod.incr_inventory(order.menu_id, today)
+        # Restore Redis inventory for the pickup date
+        target_date = order.pickup_date.isoformat()
+        await rdb_mod.incr_inventory(order.menu_id, target_date)
 
         # Update cached status
         rdb = rdb_mod.get_redis()
@@ -120,6 +120,7 @@ class OrderService:
             order_id=order_id,
             employee_id=employee_id,
             menu_id=order.menu_id,
+            pickup_date=order.pickup_date.isoformat(),
             timestamp=int(time.time()),
         )
         await mq_mod.publish(ORDER_CANCELLED, event.model_dump())
@@ -209,9 +210,17 @@ class OrderService:
             raise HTTPException(status_code=404, detail="No order today")
         return await self._overlay_live_status(order)
 
-    # ── Order History ──────────────────────────────────────────
+    # ── My Orders ──────────────────────────────────────────────
+    async def get_orders(
+        self,
+        employee_id: int,
+        from_date: date | None,
+        to_date: date | None,
+    ) -> list[Order]:
+        return await self.order_repo.list_by_employee(employee_id, from_date, to_date)
+
     async def get_orders_history(self, employee_id: int, from_dt: datetime, to_dt: datetime) -> list[Order]:
-        return await self.order_repo.list_by_employee(employee_id, from_dt, to_dt)
+        return await self.get_orders(employee_id, from_dt.date(), to_dt.date())
     
 # For Vendor APIs
 
@@ -223,6 +232,19 @@ class OrderService:
             raise HTTPException(status_code=403, detail="Not your vendor order")
 
         return await self._overlay_live_status(order)
+
+    async def get_vendor_orders(
+        self,
+        vendor_id: int,
+        from_date: date | None,
+        to_date: date | None,
+        status: str | None = None,
+    ) -> list[Order]:
+        orders = await self.order_repo.list_by_vendor(vendor_id, from_date, to_date)
+        orders = await self._overlay_live_statuses(orders)
+        if status:
+            orders = [order for order in orders if order.status.value == status]
+        return orders
 
     async def cancel_vendor_order(self, order_id: str, vendor_id: int) -> None:
         order = await self.order_repo.get_by_id(order_id)
@@ -237,9 +259,9 @@ class OrderService:
 
         await self.order_repo.update_status(order_id, OrderStatus.cancelled)
 
-        today = date.today().isoformat()
-        await rdb_mod.incr_inventory(order.menu_id, today)
-        await self.inventory_repo.increment(order.menu_id, date.today(), order.quantity)
+        target_date = order.pickup_date.isoformat()
+        await rdb_mod.incr_inventory(order.menu_id, target_date)
+        await self.inventory_repo.increment(order.menu_id, order.pickup_date, order.quantity)
 
         rdb = rdb_mod.get_redis()
         await rdb.set(rdb_mod.order_status_key(order_id), "cancelled", ex=86400)
@@ -250,6 +272,7 @@ class OrderService:
             employee_id=order.employee_id,
             vendor_id=vendor_id,
             menu_id=order.menu_id,
+            pickup_date=order.pickup_date.isoformat(),
             timestamp=int(time.time()),
         )
         await mq_mod.publish(ORDER_CANCELLED, event.model_dump())
@@ -263,7 +286,7 @@ class OrderService:
         return await self._overlay_live_statuses(orders)
 
     async def get_vendor_orders_history(self, vendor_id: int, from_dt: datetime, to_dt: datetime) -> list[Order]:
-        orders = await self.order_repo.list_by_vendor(vendor_id, from_dt, to_dt)
+        orders = await self.order_repo.list_by_vendor(vendor_id, from_dt.date(), to_dt.date())
         return await self._overlay_live_statuses(orders)
 
     async def _overlay_live_status(self, order: Order) -> Order:
@@ -301,14 +324,14 @@ class OrderService:
             return
 
         diff = quantity - order.quantity
-        today = date.today()
-        today_str = today.isoformat()
+        target_date = order.pickup_date
+        target_date_str = target_date.isoformat()
 
         if diff > 0:
             reserved = 0
             try:
                 for _ in range(diff):
-                    remaining = await rdb_mod.decr_inventory(order.menu_id, today_str)
+                    remaining = await rdb_mod.decr_inventory(order.menu_id, target_date_str)
                     if remaining < 0:
                         raise HTTPException(status_code=404, detail="Inventory not found")
                     if remaining <= 0:
@@ -316,20 +339,28 @@ class OrderService:
                     reserved += 1
             except HTTPException:
                 for _ in range(reserved):
-                    await rdb_mod.incr_inventory(order.menu_id, today_str)
+                    await rdb_mod.incr_inventory(order.menu_id, target_date_str)
                 raise
-            await self.inventory_repo.decrement(order.menu_id, today, diff)
+            await self.inventory_repo.decrement(order.menu_id, target_date, diff)
         else:
             restore_qty = abs(diff)
             for _ in range(restore_qty):
-                await rdb_mod.incr_inventory(order.menu_id, today_str)
-            await self.inventory_repo.increment(order.menu_id, today, restore_qty)
+                await rdb_mod.incr_inventory(order.menu_id, target_date_str)
+            await self.inventory_repo.increment(order.menu_id, target_date, restore_qty)
 
         await self.order_repo.update_quantity(
             order.id,
             quantity,
             order.price_snapshot * quantity,
         )
+
+    async def _reserve_inventory(self, menu_id: int, target_date: str, quantity: int) -> int:
+        remaining = await rdb_mod.reserve_inventory(menu_id, target_date, quantity)
+        if remaining == -2:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inventory not found")
+        if remaining == -1:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Out of stock")
+        return quantity
 
     async def _cancel_loaded_order(self, order: Order, actor: dict) -> None:
         if order.status == OrderStatus.cancelled:
@@ -339,9 +370,9 @@ class OrderService:
 
         await self.order_repo.update_status(order.id, OrderStatus.cancelled)
 
-        today = date.today().isoformat()
-        await rdb_mod.incr_inventory(order.menu_id, today)
-        await self.inventory_repo.increment(order.menu_id, date.today(), order.quantity)
+        target_date = order.pickup_date.isoformat()
+        await rdb_mod.incr_inventory(order.menu_id, target_date)
+        await self.inventory_repo.increment(order.menu_id, order.pickup_date, order.quantity)
         await self._cache_status(order.id, OrderStatus.cancelled)
 
         event = OrderEvent(
@@ -350,6 +381,7 @@ class OrderService:
             employee_id=order.employee_id,
             vendor_id=order.vendor_id,
             menu_id=order.menu_id,
+            pickup_date=order.pickup_date.isoformat(),
             timestamp=int(time.time()),
         )
         await mq_mod.publish(ORDER_CANCELLED, event.model_dump())

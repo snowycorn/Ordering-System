@@ -1,5 +1,7 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Annotated
+
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -8,6 +10,7 @@ from app.models.order import Order, PlaceOrderRequest, UpdateOrderQuantityReques
 from app.services.order_service import OrderService
 
 router = APIRouter()
+TW_TZ = ZoneInfo("Asia/Taipei")
 
 
 def get_service() -> OrderService:
@@ -31,31 +34,32 @@ async def create_order(
 
 
 # GET /orders/me
-@router.get("/me", response_model=Order)
-async def get_today_order(
-    user: Annotated[dict, Depends(get_current_user)],
-    svc: OrderService = Depends(get_service),
-):
-    require_employee(user)
-    return await svc.get_today_order(employee_id=user["user_id"])
-
-
-# GET /orders/me/history?from=2024-01-01&to=2024-01-31
-@router.get("/me/history")
+@router.get("/me")
 async def get_my_orders(
     user: Annotated[dict, Depends(get_current_user)],
     svc: OrderService = Depends(get_service),
-    from_date: str = Query(default=None, alias="from"),
-    to_date: str = Query(default=None, alias="to"),
+    range: str | None = Query(default=None),
+    from_date: date | None = Query(default=None, alias="from"),
+    to_date: date | None = Query(default=None, alias="to"),
 ):
     require_employee(user)
 
-    now = datetime.now(timezone.utc)
-    from_dt = datetime.fromisoformat(from_date) if from_date else now - timedelta(days=30)
-    to_dt = datetime.fromisoformat(to_date) if to_date else now
+    now = datetime.now(TW_TZ)
+    today = now.date()
+    range_value = range or ("custom" if from_date is not None or to_date is not None else "today")
 
-    orders = await svc.get_orders_history(user["user_id"], from_dt, to_dt)
-    return {"orders": orders, "count": len(orders)}
+    if range_value == "today":
+        from_date = today
+        to_date = today
+    elif range_value == "upcoming":
+        from_date = today
+        to_date = None
+    elif range_value == "history":
+        from_date = None
+        to_date = today
+
+    orders = await svc.get_orders(user["user_id"], from_date, to_date)
+    return {"orders": orders, "count": len(orders), "range": range_value}
 
 
 # GET /orders/{order_id}

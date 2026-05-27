@@ -1,5 +1,6 @@
 import asyncio
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi import HTTPException
@@ -10,6 +11,7 @@ from app.services.order_service import OrderService
 
 
 ORDER_ID = "11111111-1111-4111-8111-111111111111"
+TW_TZ = ZoneInfo("Asia/Taipei")
 
 
 def make_order(
@@ -140,7 +142,7 @@ def test_create_order_raises_conflict_when_out_of_stock(monkeypatch):
         quantity=2,
         pickup_date=date.today() + timedelta(days=2),
     )
-    monkeypatch.setattr(order_service.rdb_mod, "decr_inventory", lambda menu_id, target_date: asyncio.sleep(0, result=0))
+    monkeypatch.setattr(order_service.rdb_mod, "reserve_inventory", lambda menu_id, target_date, quantity: asyncio.sleep(0, result=-1))
 
     # act: create an order for an out-of-stock menu
     with pytest.raises(HTTPException) as exc_info:
@@ -164,8 +166,9 @@ def test_create_order_success_persists_pending_state_and_publishes(monkeypatch):
     )
     rdb = FakeRedis()
     publish_calls = []
+    reserve_calls = []
 
-    monkeypatch.setattr(order_service.rdb_mod, "decr_inventory", lambda menu_id, target_date: asyncio.sleep(0, result=4))
+    monkeypatch.setattr(order_service.rdb_mod, "reserve_inventory", lambda menu_id, target_date, quantity: asyncio.sleep(0, result=reserve_calls.append((menu_id, target_date, quantity)) or 4))
     monkeypatch.setattr(order_service.rdb_mod, "get_redis", lambda: rdb)
     monkeypatch.setattr(order_service.rdb_mod, "incr_inventory", lambda menu_id, target_date: asyncio.sleep(0, result=1))
     monkeypatch.setattr(order_service.mq_mod, "publish", lambda routing_key, payload: asyncio.sleep(0, result=publish_calls.append((routing_key, payload))))
@@ -186,6 +189,8 @@ def test_create_order_success_persists_pending_state_and_publishes(monkeypatch):
     assert publish_calls[0][1]["employee_id"] == 9
     assert publish_calls[0][1]["vendor_id"] == 7
     assert publish_calls[0][1]["quantity"] == 2
+    assert publish_calls[0][1]["pickup_date"] == req.pickup_date.isoformat()
+    assert reserve_calls == [(42, req.pickup_date.isoformat(), 2)]
 
 
 def test_create_order_rolls_back_when_queue_publish_fails(monkeypatch):
@@ -196,16 +201,17 @@ def test_create_order_rolls_back_when_queue_publish_fails(monkeypatch):
         menu_id=42,
         menu_name="Lunch Box",
         price=120,
-        quantity=1,
+        quantity=2,
         pickup_date=date.today() + timedelta(days=2),
     )
     rdb = FakeRedis()
     incr_calls = []
+    reserve_calls = []
 
     async def failing_publish(routing_key: str, payload: dict):
         raise RuntimeError("queue down")
 
-    monkeypatch.setattr(order_service.rdb_mod, "decr_inventory", lambda menu_id, target_date: asyncio.sleep(0, result=3))
+    monkeypatch.setattr(order_service.rdb_mod, "reserve_inventory", lambda menu_id, target_date, quantity: asyncio.sleep(0, result=reserve_calls.append((menu_id, target_date, quantity)) or 3))
     monkeypatch.setattr(order_service.rdb_mod, "get_redis", lambda: rdb)
     monkeypatch.setattr(order_service.rdb_mod, "incr_inventory", lambda menu_id, target_date: asyncio.sleep(0, result=incr_calls.append((menu_id, target_date))))
     monkeypatch.setattr(order_service.mq_mod, "publish", failing_publish)
@@ -218,14 +224,15 @@ def test_create_order_rolls_back_when_queue_publish_fails(monkeypatch):
     # assert: stock should be rolled back, cache cleared, and a 500 returned
     assert exc_info.value.status_code == 500
     assert "Queue error: queue down" in exc_info.value.detail
-    assert incr_calls == [(42, date.today().isoformat())]
+    assert incr_calls == [(42, req.pickup_date.isoformat()), (42, req.pickup_date.isoformat())]
+    assert reserve_calls == [(42, req.pickup_date.isoformat(), 2)]
     assert rdb.delete_calls == ["order:today:abcdefab-cdef-4abc-8def-abcdefabcdef"]
 
 
 def test_create_order_rejects_after_deadline():
     # arrange: an order service at 17:01 on the day before pickup
     svc = OrderService()
-    svc._now_utc = lambda: datetime(2026, 5, 26, 17, 1, tzinfo=timezone.utc)
+    svc._now = lambda: datetime(2026, 5, 26, 17, 1, tzinfo=TW_TZ)
     req = PlaceOrderRequest(
         vendor_id=7,
         menu_id=42,
@@ -381,14 +388,15 @@ def test_get_orders_history_returns_employee_orders():
 
     # assert: repository should be called and return the same orders
     assert result == history_orders
-    assert svc.order_repo.list_by_employee_call == (1, from_dt, to_dt)
+    assert svc.order_repo.list_by_employee_call == (1, from_dt.date(), to_dt.date())
 
 
 def test_cancel_order_updates_status_inventory_and_cache(monkeypatch):
     # arrange: an order service with a cancellable employee order
+    order = make_order(pickup_date=date.today() + timedelta(days=2))
     rdb = FakeRedis()
     svc = OrderService()
-    svc.order_repo = FakeOrderRepository(order=make_order(pickup_date=date.today() + timedelta(days=2)))
+    svc.order_repo = FakeOrderRepository(order=order)
     publish_calls = []
     monkeypatch.setattr(order_service.rdb_mod, "get_redis", lambda: rdb)
     monkeypatch.setattr(order_service.rdb_mod, "incr_inventory", lambda menu_id, target_date: asyncio.sleep(0, result=1))
@@ -399,6 +407,8 @@ def test_cancel_order_updates_status_inventory_and_cache(monkeypatch):
 
     # assert: status, Redis cache, and publish event should be updated
     assert svc.order_repo.update_status_call == (ORDER_ID, OrderStatus.cancelled)
+    assert svc.inventory_repo is not None
+    assert publish_calls[0][1]["pickup_date"] == order.pickup_date.isoformat()
     assert rdb.set_calls == [(f"order:today:{ORDER_ID}", "cancelled", 86400)]
     assert publish_calls[0][0] == order_service.ORDER_CANCELLED
     assert publish_calls[0][1]["order_id"] == ORDER_ID
@@ -408,7 +418,7 @@ def test_cancel_order_rejects_after_deadline():
     # arrange: an order service with an order whose cancellation deadline has passed
     svc = OrderService()
     svc.order_repo = FakeOrderRepository(order=make_order(pickup_date=date(2026, 5, 26)))
-    svc._now_utc = lambda: datetime(2026, 5, 25, 17, 1, tzinfo=timezone.utc)
+    svc._now = lambda: datetime(2026, 5, 25, 17, 1, tzinfo=TW_TZ)
 
     # act: cancel the order after the deadline
     with pytest.raises(HTTPException) as exc_info:
@@ -423,7 +433,7 @@ def test_update_order_quantity_rejects_after_deadline():
     # arrange: an order service with an order whose change deadline has passed
     svc = OrderService()
     svc.order_repo = FakeOrderRepository(order=make_order(pickup_date=date(2026, 5, 27)))
-    svc._now_utc = lambda: datetime(2026, 5, 26, 17, 1, tzinfo=timezone.utc)
+    svc._now = lambda: datetime(2026, 5, 26, 17, 1, tzinfo=TW_TZ)
 
     # act: update the order quantity after the cutoff
     with pytest.raises(HTTPException) as exc_info:
@@ -478,7 +488,7 @@ def test_update_order_quantity_can_decrease_inventory(monkeypatch):
     # assert: inventory and repository should be adjusted downwards
     assert result.quantity == 1
     assert result.total_price == 120
-    assert svc.inventory_repo.increment_call == (42, date.today(), 2)
+    assert svc.inventory_repo.increment_call == (42, order.pickup_date, 2)
     assert svc.order_repo.update_quantity_call == (ORDER_ID, 1, 120)
 
 
@@ -584,14 +594,15 @@ def test_get_vendor_orders_history_returns_orders(monkeypatch):
 
     # assert: repository should be called and return the same orders
     assert result == vendor_orders
-    assert svc.order_repo.list_by_vendor_call == (7, from_dt, to_dt)
+    assert svc.order_repo.list_by_vendor_call == (7, from_dt.date(), to_dt.date())
 
 
 def test_cancel_vendor_order_updates_everything(monkeypatch):
     # arrange: an order service with a vendor-owned order and fake inventory dependencies
+    order = make_order()
     rdb = FakeRedis()
     svc = OrderService()
-    svc.order_repo = FakeOrderRepository(order=make_order())
+    svc.order_repo = FakeOrderRepository(order=order)
     svc.inventory_repo = FakeInventoryRepository()
     publish_calls = []
     monkeypatch.setattr(order_service.rdb_mod, "get_redis", lambda: rdb)
@@ -603,9 +614,10 @@ def test_cancel_vendor_order_updates_everything(monkeypatch):
 
     # assert: repository, inventory, cache, and publish event should all be updated
     assert svc.order_repo.update_status_call == (ORDER_ID, OrderStatus.cancelled)
-    assert svc.inventory_repo.increment_call == (42, date.today(), 1)
+    assert svc.inventory_repo.increment_call == (42, order.pickup_date, 1)
     assert rdb.set_calls == [(f"order:today:{ORDER_ID}", "cancelled", 86400)]
     assert publish_calls[0][0] == order_service.ORDER_CANCELLED
+    assert publish_calls[0][1]["pickup_date"] == order.pickup_date.isoformat()
     assert publish_calls[0][1]["vendor_id"] == 7
 
 
@@ -655,7 +667,7 @@ def test_cancel_vendor_order_rejects_after_deadline():
     # arrange: an order service with a vendor order past the cutoff
     svc = OrderService()
     svc.order_repo = FakeOrderRepository(order=make_order(pickup_date=date(2026, 5, 27)))
-    svc._now_utc = lambda: datetime(2026, 5, 26, 17, 1, tzinfo=timezone.utc)
+    svc._now = lambda: datetime(2026, 5, 26, 17, 1, tzinfo=TW_TZ)
 
     # act: cancel the vendor order after the cutoff
     with pytest.raises(HTTPException) as exc_info:
@@ -751,9 +763,10 @@ def test_vendor_update_order_rejects_non_cancel_status():
 
 def test_admin_update_order_cancel_uses_loaded_cancel_path(monkeypatch):
     # arrange: an order service with an order and fake cache/inventory dependencies
+    order = make_order()
     rdb = FakeRedis()
     svc = OrderService()
-    svc.order_repo = FakeOrderRepository(order=make_order())
+    svc.order_repo = FakeOrderRepository(order=order)
     svc.inventory_repo = FakeInventoryRepository()
     publish_calls = []
     monkeypatch.setattr(order_service.rdb_mod, "get_redis", lambda: rdb)
@@ -772,9 +785,10 @@ def test_admin_update_order_cancel_uses_loaded_cancel_path(monkeypatch):
     # assert: admin cancel should use the loaded cancel path and cache cancelled
     assert result.status == OrderStatus.cancelled
     assert svc.order_repo.update_status_call == (ORDER_ID, OrderStatus.cancelled)
-    assert svc.inventory_repo.increment_call == (42, date.today(), 1)
+    assert svc.inventory_repo.increment_call == (42, order.pickup_date, 1)
     assert rdb.set_calls == [(f"order:today:{ORDER_ID}", "cancelled", 86400)]
     assert publish_calls[0][0] == order_service.ORDER_CANCELLED
+    assert publish_calls[0][1]["pickup_date"] == order.pickup_date.isoformat()
 
 
 def test_get_order_for_actor_rejects_wrong_employee():
@@ -815,8 +829,9 @@ def test_admin_update_order_can_set_non_cancelled_status(monkeypatch):
 
 def test_employee_update_order_can_increase_quantity(monkeypatch):
     # arrange: an order service with an employee-owned order and available inventory
+    order = make_order()
     svc = OrderService()
-    svc.order_repo = FakeOrderRepository(order=make_order())
+    svc.order_repo = FakeOrderRepository(order=order)
     svc.inventory_repo = FakeInventoryRepository()
     decr_calls = []
     monkeypatch.setattr(
@@ -839,7 +854,7 @@ def test_employee_update_order_can_increase_quantity(monkeypatch):
     assert result.quantity == 3
     assert result.total_price == 360
     assert len(decr_calls) == 2
-    assert svc.inventory_repo.decrement_call == (42, date.today(), 2)
+    assert svc.inventory_repo.decrement_call == (42, order.pickup_date, 2)
     assert svc.order_repo.update_quantity_call == (ORDER_ID, 3, 360)
 
 
@@ -869,9 +884,10 @@ def test_employee_update_order_quantity_returns_conflict_when_out_of_stock(monke
 
 def test_vendor_update_order_can_cancel_own_order(monkeypatch):
     # arrange: an order service with a vendor-owned order and fake inventory dependencies
+    order = make_order()
     rdb = FakeRedis()
     svc = OrderService()
-    svc.order_repo = FakeOrderRepository(order=make_order())
+    svc.order_repo = FakeOrderRepository(order=order)
     svc.inventory_repo = FakeInventoryRepository()
     publish_calls = []
     monkeypatch.setattr(order_service.rdb_mod, "get_redis", lambda: rdb)
@@ -890,7 +906,8 @@ def test_vendor_update_order_can_cancel_own_order(monkeypatch):
     # assert: repository, inventory, Redis, and RabbitMQ should receive the cancellation
     assert result.status == OrderStatus.cancelled
     assert svc.order_repo.update_status_call == (ORDER_ID, OrderStatus.cancelled)
-    assert svc.inventory_repo.increment_call == (42, date.today(), 1)
+    assert svc.inventory_repo.increment_call == (42, order.pickup_date, 1)
     assert rdb.set_calls == [(f"order:today:{ORDER_ID}", "cancelled", 86400)]
     assert publish_calls[0][0] == order_service.ORDER_CANCELLED
     assert publish_calls[0][1]["order_id"] == ORDER_ID
+    assert publish_calls[0][1]["pickup_date"] == order.pickup_date.isoformat()
