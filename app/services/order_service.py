@@ -1,6 +1,6 @@
 import time
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time as dt_time, timedelta, timezone
 
 from fastapi import HTTPException, status
 
@@ -18,9 +18,23 @@ class OrderService:
         self.order_repo = OrderRepository()
         self.inventory_repo = InventoryRepository()
 
+    def _now_utc(self) -> datetime:
+        return datetime.now(timezone.utc)
+
+    def _change_deadline(self, pickup_date: date) -> datetime:
+        return datetime.combine(
+            pickup_date - timedelta(days=1),
+            dt_time(hour=17, tzinfo=timezone.utc),
+        )
+
+    def _ensure_before_change_deadline(self, pickup_date: date, detail: str) -> None:
+        if self._now_utc() > self._change_deadline(pickup_date):
+            raise HTTPException(status_code=422, detail=detail)
+
 # For Employee APIs
     # ── Place Order ────────────────────────────────────────────
     async def create_order(self, req: PlaceOrderRequest, employee_id: int) -> dict:
+        self._ensure_before_change_deadline(req.pickup_date, "Order change deadline passed")
         today = date.today().isoformat()
 
         # Step 1: Atomic DECR in Redis (Lua script) — prevents oversell
@@ -87,10 +101,7 @@ class OrderService:
             raise HTTPException(status_code=422, detail="Already cancelled")
 
         # Business rule: must cancel before 17:00 the day before pickup
-        deadline = datetime.combine(order.pickup_date, datetime.min.time()).replace(
-            tzinfo=timezone.utc
-        ) - timedelta(hours=7)  # 17:00 prev day
-        if datetime.now(timezone.utc) > deadline:
+        if self._now_utc() > self._change_deadline(order.pickup_date):
             raise HTTPException(status_code=422, detail="Cancellation deadline passed")
 
         await self.order_repo.update_status(order_id, OrderStatus.cancelled)
@@ -184,6 +195,8 @@ class OrderService:
         if order.employee_id != employee_id:
             raise HTTPException(status_code=403, detail="Not your order")
 
+        self._ensure_before_change_deadline(order.pickup_date, "Order change deadline passed")
+
         await self._update_order_quantity(order, quantity)
         order.quantity = quantity
         order.total_price = order.price_snapshot * quantity
@@ -219,6 +232,8 @@ class OrderService:
             raise HTTPException(status_code=403, detail="Not your vendor order")
         if order.status == OrderStatus.cancelled:
             raise HTTPException(status_code=422, detail="Already cancelled")
+
+        self._ensure_before_change_deadline(order.pickup_date, "Order change deadline passed")
 
         await self.order_repo.update_status(order_id, OrderStatus.cancelled)
 
@@ -319,6 +334,8 @@ class OrderService:
     async def _cancel_loaded_order(self, order: Order, actor: dict) -> None:
         if order.status == OrderStatus.cancelled:
             raise HTTPException(status_code=422, detail="Already cancelled")
+
+        self._ensure_before_change_deadline(order.pickup_date, "Order change deadline passed")
 
         await self.order_repo.update_status(order.id, OrderStatus.cancelled)
 
