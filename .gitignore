@@ -5,3 +5,6 @@ __pycache__/
 reports/*.html
 reports/coverage.xml
 reports/coverage/
+.venv/
+.env
+.vscode/

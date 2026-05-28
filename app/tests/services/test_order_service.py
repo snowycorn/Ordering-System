@@ -382,6 +382,8 @@ def test_get_orders_history_returns_employee_orders():
     svc.order_repo = FakeOrderRepository(employee_orders=history_orders)
     from_dt = datetime(2026, 5, 1, tzinfo=timezone.utc)
     to_dt = datetime(2026, 5, 31, tzinfo=timezone.utc)
+    fake_redis = FakeRedis(cached=None)
+    order_service.rdb_mod.get_redis = lambda: fake_redis
 
     # act: fetch order history
     result = asyncio.run(svc.get_orders_history(employee_id=1, from_dt=from_dt, to_dt=to_dt))

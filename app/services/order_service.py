@@ -1,6 +1,7 @@
 import time
 import uuid
 from datetime import date, datetime, time as dt_time, timedelta, timezone
+from typing import Optional
 from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException, status
@@ -214,10 +215,24 @@ class OrderService:
     async def get_orders(
         self,
         employee_id: int,
-        from_date: date | None,
-        to_date: date | None,
+        from_date: Optional[date],
+        to_date: Optional[date],
+        status: Optional[str] = None,
     ) -> list[Order]:
-        return await self.order_repo.list_by_employee(employee_id, from_date, to_date)
+        orders = await self.order_repo.list_by_employee(employee_id, from_date, to_date)
+        orders = await self._overlay_live_statuses(orders)
+        if status:
+            orders = [order for order in orders if order.status.value == status]
+        return orders
+
+    async def get_orders_by_employee_id(
+        self,
+        employee_id: int,
+        from_date: Optional[date],
+        to_date: Optional[date],
+        status: Optional[str] = None,
+    ) -> list[Order]:
+        return await self.get_orders(employee_id, from_date, to_date, status=status)
 
     async def get_orders_history(self, employee_id: int, from_dt: datetime, to_dt: datetime) -> list[Order]:
         return await self.get_orders(employee_id, from_dt.date(), to_dt.date())
@@ -236,15 +251,24 @@ class OrderService:
     async def get_vendor_orders(
         self,
         vendor_id: int,
-        from_date: date | None,
-        to_date: date | None,
-        status: str | None = None,
+        from_date: Optional[date],
+        to_date: Optional[date],
+        status: Optional[str] = None,
     ) -> list[Order]:
         orders = await self.order_repo.list_by_vendor(vendor_id, from_date, to_date)
         orders = await self._overlay_live_statuses(orders)
         if status:
             orders = [order for order in orders if order.status.value == status]
         return orders
+
+    async def get_vendor_orders_by_vendor_id(
+        self,
+        vendor_id: int,
+        from_date: Optional[date],
+        to_date: Optional[date],
+        status: Optional[str] = None,
+    ) -> list[Order]:
+        return await self.get_vendor_orders(vendor_id, from_date, to_date, status=status)
 
     async def cancel_vendor_order(self, order_id: str, vendor_id: int) -> None:
         order = await self.order_repo.get_by_id(order_id)
