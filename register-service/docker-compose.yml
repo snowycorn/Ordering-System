@@ -1,0 +1,24 @@
+# 本地開發用：PostgreSQL。
+# 服務本身在本地以 `npm run start:dev` 啟動，連到這裡的 DB。
+# Port 5433（避免與 vendor-menu-db 的 5432 衝突）
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: register-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: register_db
+    ports:
+      - '5433:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
