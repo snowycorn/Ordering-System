@@ -182,14 +182,12 @@ jobs:
             npm prune --omit=dev
 
             # ── 啟動 or 熱重載 ────────────────────────────────────────────────
-            # 注意：不可用 `pm2 reload register`，因為 register 撞到 PM2 內建指令
-            # （pm2 register 是 PM2 Plus 帳號註冊），CLI 會把它誤判成指令而報錯。
-            # 改用 reload all（EC2-B 只跑這兩個服務）避開保留字。
-            if pm2 list | grep -qE 'vendor-menu|register'; then
-              pm2 reload all --update-env
+            if pm2 list | grep -qE 'vendor-menu-service|register-service'; then
+              pm2 reload vendor-menu-service --update-env
+              pm2 reload register-service --update-env
             else
-              pm2 start ~/app/vendor-menu-service/dist/main.js --name vendor-menu
-              pm2 start ~/app/register-service/dist/main.js --name register
+              pm2 start ~/app/vendor-menu-service/dist/main.js --name vendor-menu-service
+              pm2 start ~/app/register-service/dist/main.js --name register-service
             fi
             pm2 save
 
