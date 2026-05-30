@@ -56,7 +56,6 @@ jobs:
         working-directory: vendor-menu-service
         env:
           DATABASE_URL: postgresql://myuser:mypassword@localhost:5432/vendor_menu_test_db
-          AWS_REGION: ap-northeast-1
           AWS_S3_BUCKET_NAME: local-dev-bucket
         run: |
           npm ci
@@ -68,7 +67,6 @@ jobs:
         working-directory: register-service
         env:
           DATABASE_URL: postgresql://myuser:mypassword@localhost:5433/register_test_db
-          AWS_REGION: ap-northeast-1
           AWS_S3_BUCKET_NAME: local-dev-bucket
           IAM_SERVICE_URL: http://localhost:3001
           VENDOR_MENU_SERVICE_URL: http://localhost:3007
@@ -101,7 +99,6 @@ jobs:
             RDS_HOST=${{ secrets.RDS_B_HOST }}
             DB_USER=postgres
             DB_PASSWORD=${{ secrets.RDS_B_PASS }}
-            AWS_REGION=ap-northeast-1
             AWS_S3_BUCKET_NAME_MENU=${{ secrets.AWS_S3_BUCKET_NAME_MENU }}
             AWS_S3_BUCKET_NAME_REGISTER=${{ secrets.AWS_S3_BUCKET_NAME_REGISTER }}
             IAM_SERVICE_URL=http://${{ secrets.EC2_A_PRIVATE_IP }}:3001
@@ -150,7 +147,6 @@ jobs:
             NODE_ENV=production
             PORT=3007
             DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@${RDS_HOST}:5432/vendor_menu_db?sslmode=require
-            AWS_REGION=${AWS_REGION}
             AWS_S3_BUCKET_NAME=${AWS_S3_BUCKET_NAME_MENU}
             $([ -n "${AWS_ACCESS_KEY_ID:-}" ] && echo "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}")
             $([ -n "${AWS_SECRET_ACCESS_KEY:-}" ] && echo "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}")
@@ -167,7 +163,6 @@ jobs:
             NODE_ENV=production
             PORT=3008
             DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@${RDS_HOST}:5432/register_db?sslmode=require
-            AWS_REGION=${AWS_REGION}
             AWS_S3_BUCKET_NAME=${AWS_S3_BUCKET_NAME_REGISTER}
             $([ -n "${AWS_ACCESS_KEY_ID:-}" ] && echo "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}")
             $([ -n "${AWS_SECRET_ACCESS_KEY:-}" ] && echo "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}")
