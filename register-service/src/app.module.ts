@@ -20,13 +20,12 @@ import { RolesGuard } from './common/guards/roles.guard';
     }),
     // 全域 Rate Limiting：預設 100 req / 60s / IP
     // 入駐相關公開端點（upload-url / 送出申請）另用 @Throttle() 收緊到 5 req/min
-    ThrottlerModule.forRoot([
-      {
-        name: 'default',
-        ttl: 60000,
-        limit: 100,
-      },
-    ]),
+    // NODE_ENV=test 時關閉限流，避免 e2e 測試被 rate limit 阻擋
+    ThrottlerModule.forRoot(
+      process.env.NODE_ENV === 'test'
+        ? []
+        : [{ name: 'default', ttl: 60000, limit: 100 }],
+    ),
     PrismaModule,
     ApplicationsModule,
     HealthModule,
