@@ -186,8 +186,10 @@ jobs:
               pm2 reload vendor-menu-service --update-env
               pm2 reload register-service --update-env
             else
-              pm2 start ~/app/vendor-menu-service/dist/main.js --name vendor-menu-service
-              pm2 start ~/app/register-service/dist/main.js --name register-service
+              cd ~/app/vendor-menu-service
+              pm2 start dist/main.js --name vendor-menu-service
+              cd ~/app/register-service
+              pm2 start dist/main.js --name register-service
             fi
             pm2 save
 
