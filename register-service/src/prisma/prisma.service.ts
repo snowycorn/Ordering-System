@@ -7,10 +7,21 @@ import { PrismaPg } from '@prisma/adapter-pg';
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   constructor() {
+    // pg v8+ treats sslmode=require as verify-full (full cert verification).
+    // Amazon RDS CA cert is not in Ubuntu's default trust store, so verification fails.
+    // Strip sslmode from the connection string and configure SSL explicitly instead.
+    const rawUrl = process.env.DATABASE_URL ?? '';
+    let connectionString = rawUrl;
+    try {
+      const url = new URL(rawUrl);
+      url.searchParams.delete('sslmode');
+      connectionString = url.toString();
+    } catch {
+      // keep rawUrl as-is if URL parsing fails
+    }
+
     const pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
-      // RDS uses Amazon's own CA cert which may not be in the system trust store.
-      // The connection is still encrypted; cert verification is skipped (safe in a private VPC).
+      connectionString,
       ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
     });
     const adapter = new PrismaPg(pool);
