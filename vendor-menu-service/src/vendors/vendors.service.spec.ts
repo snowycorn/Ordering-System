@@ -1,7 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { VendorsService } from './vendors.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { NotFoundException } from '@nestjs/common';
+import { NotFoundException, ConflictException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { CreateVendorDto } from './dto/create-vendor.dto';
 import { UpdateVendorDto } from './dto/update-vendor.dto';
 
@@ -59,6 +60,28 @@ describe('VendorsService', () => {
         },
       });
       expect(result).toEqual(expectedResult);
+    });
+
+    it('should throw ConflictException when userId already bound (Prisma P2002)', async () => {
+      const dto: CreateVendorDto = { name: 'Dup Vendor', userId: 99 };
+      const p2002 = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: 'test',
+      });
+      mockPrismaService.vendor.create.mockRejectedValue(p2002);
+
+      await expect(service.create(dto)).rejects.toThrow(ConflictException);
+    });
+
+    it('should rethrow non-P2002 prisma errors as-is', async () => {
+      const dto: CreateVendorDto = { name: 'Vendor', userId: 1 };
+      const other = new Prisma.PrismaClientKnownRequestError('boom', {
+        code: 'P2003',
+        clientVersion: 'test',
+      });
+      mockPrismaService.vendor.create.mockRejectedValue(other);
+
+      await expect(service.create(dto)).rejects.toBe(other);
     });
   });
 

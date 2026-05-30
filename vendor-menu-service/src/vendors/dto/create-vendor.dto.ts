@@ -1,5 +1,5 @@
 // src/vendors/dto/create-vendor.dto.ts
-import { IsString, IsNotEmpty, IsOptional, IsArray, IsInt, MaxLength } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsInt, MaxLength } from 'class-validator';
 
 export class CreateVendorDto {
   @IsString()
@@ -25,9 +25,4 @@ export class CreateVendorDto {
   @IsString()
   @MaxLength(100)
   factoryZone?: string;
-
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  allowedAreas?: string[];
 }

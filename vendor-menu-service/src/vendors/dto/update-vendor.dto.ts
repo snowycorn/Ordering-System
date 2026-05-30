@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsArray } from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
 
 export class UpdateVendorDto {
   @IsOptional()
@@ -16,10 +16,6 @@ export class UpdateVendorDto {
   @IsOptional()
   @IsString()
   factoryZone?: string;
-
-  @IsOptional()
-  @IsArray()
-  allowedAreas?: string[];
 
   @IsOptional()
   @IsString()

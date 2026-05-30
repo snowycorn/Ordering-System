@@ -134,7 +134,7 @@ docker-compose down -v
 | Method | Path | 說明 |
 |---|---|---|
 | `GET` | `/api/v1/vendors/me` | 查詢自己的商家資料 |
-| `PUT` | `/api/v1/vendors/me` | 更新自己的商家資料（name / category / description / factoryZone / allowedAreas / status） |
+| `PUT` | `/api/v1/vendors/me` | 更新自己的商家資料（name / category / description / factoryZone / status） |
 | `GET` | `/api/v1/vendors/me/menus` | 查詢自己所有菜單（含下架） |
 | `GET` | `/api/v1/vendors/me/menus/:menuId` | 查詢單一菜單詳情（含今日起的 DailyQuota 排程，越權回 404） |
 | `POST` | `/api/v1/vendors/me/menus` | 新增菜單項目 |

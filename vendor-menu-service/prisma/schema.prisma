@@ -15,7 +15,6 @@ model Vendor {
   category     String?  @db.VarChar(100)        // 商家類別（中式、日式、便當...）
   description  String?  @db.Text                 // 商家描述
   factoryZone  String?  @map("factory_zone") @db.VarChar(100) // 主要服務廠區
-  allowedAreas Json     @default("[]") @map("allowed_areas")  // 多廠區授權
   status       String   @default("ACTIVE") @db.VarChar(50)
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz

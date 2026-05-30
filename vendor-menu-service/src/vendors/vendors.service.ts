@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateVendorDto } from './dto/create-vendor.dto';
 import { UpdateVendorDto } from './dto/update-vendor.dto';
@@ -22,12 +27,25 @@ export class VendorsService {
    * 新商家預設狀態為 ACTIVE。
    */
   async create(createVendorDto: CreateVendorDto) {
-    return this.prisma.vendor.create({
-      data: {
-        ...createVendorDto,
-        status: 'ACTIVE',
-      },
-    });
+    try {
+      return await this.prisma.vendor.create({
+        data: {
+          ...createVendorDto,
+          status: 'ACTIVE',
+        },
+      });
+    } catch (err) {
+      // userId @unique 衝突（P2002）：此 IAM 帳號已綁定商家，回 409 而非 500
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          `此帳號（userId=${createVendorDto.userId}）已綁定商家，無法重複建立`,
+        );
+      }
+      throw err;
+    }
   }
 
   // ---- 商家自管 & 管理員共用 ----
@@ -82,7 +100,6 @@ export class VendorsService {
         category: true,
         description: true,
         factoryZone: true,
-        allowedAreas: true,
         status: true,
       },
       orderBy: { name: 'asc' },

@@ -23,7 +23,7 @@ export class MeVendorsController {
 
   /**
    * GET /api/v1/vendors/me
-   * 商家查詢自己的完整資料（含 allowedAreas 等後台欄位）。
+   * 商家查詢自己的完整資料。
    */
   @Get()
   async getMyProfile(@Headers('x-user-id') xUserId: string) {
