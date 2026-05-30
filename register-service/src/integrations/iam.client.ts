@@ -18,6 +18,9 @@ export class IamClient {
 
   private cachedToken?: string;
   private tokenExpiresAt = 0; // Unix ms
+  // 直連 IAM（繞過 Kong）時，需自行補上 Gateway 平常注入的身份 header。
+  // 由 /auth/login 回應取得 admin 的 userId/role/email 後快取。
+  private adminIdentity?: { userId: number; role: string; email: string };
 
   constructor(private readonly config: ConfigService) {
     this.iamUrl = this.config.get<string>('IAM_SERVICE_URL', 'http://localhost:3001');
@@ -45,11 +48,36 @@ export class IamClient {
       );
     }
 
-    const data = (await res.json()) as { token: string };
+    const data = (await res.json()) as {
+      token: string;
+      userId: number;
+      role: string;
+      email?: string;
+    };
     this.cachedToken = data.token;
+    this.adminIdentity = {
+      userId: data.userId,
+      role: data.role,
+      email: data.email ?? this.adminEmail,
+    };
     // IAM token TTL 預設 24h；快取 23.5h
     this.tokenExpiresAt = Date.now() + 23.5 * 60 * 60 * 1000;
     return this.cachedToken;
+  }
+
+  /**
+   * 直連 IAM 受保護端點時，補上 Gateway 平常注入的身份 header。
+   * IAM 的 authenticate middleware 需要 X-User-Id / X-User-Role；
+   * authorize("admin") 端點還要求 X-User-Role === 'admin'。
+   */
+  private gatewayHeaders(token: string): Record<string, string> {
+    return {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      'X-User-Id': String(this.adminIdentity?.userId ?? ''),
+      'X-User-Role': this.adminIdentity?.role ?? 'admin',
+      'X-User-Email': this.adminIdentity?.email ?? this.adminEmail,
+    };
   }
 
   /**
@@ -64,10 +92,7 @@ export class IamClient {
 
     const res = await fetch(`${this.iamUrl}/users`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
+      headers: this.gatewayHeaders(token),
       body: JSON.stringify({ email, password, role: 'vendor' }),
     });
 
@@ -90,7 +115,7 @@ export class IamClient {
   private async findUserIdByEmail(email: string, token: string): Promise<number> {
     const res = await fetch(`${this.iamUrl}/users`, {
       method: 'GET',
-      headers: { Authorization: `Bearer ${token}` },
+      headers: this.gatewayHeaders(token),
     });
 
     if (!res.ok) {

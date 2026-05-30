@@ -146,4 +146,30 @@ describe('IamClient', () => {
       );
     });
   });
+
+  // ── Gateway identity headers（直連 IAM 受保護端點時需補上）─────────────────
+  describe('Gateway identity headers', () => {
+    it('POST /users 帶上 X-User-Role: admin 與由 login 回應取得的 X-User-Id / X-User-Email', async () => {
+      fetchSpy
+        .mockResolvedValueOnce(
+          mockResponse(200, {
+            token: 'jwt',
+            userId: 99,
+            role: 'admin',
+            email: 'admin@test.com',
+          }),
+        ) // login
+        .mockResolvedValueOnce(mockResponse(201, { id: 42 })); // POST /users
+
+      await client.createVendorUser('v@test.com', 'pw');
+
+      const userCall = fetchSpy.mock.calls.find((c) =>
+        (c[0] as string).endsWith('/users'),
+      );
+      const headers = (userCall![1] as RequestInit).headers as Record<string, string>;
+      expect(headers['X-User-Role']).toBe('admin');
+      expect(headers['X-User-Id']).toBe('99');
+      expect(headers['X-User-Email']).toBe('admin@test.com');
+    });
+  });
 });
