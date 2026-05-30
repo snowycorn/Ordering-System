@@ -9,6 +9,7 @@ describe('MeVendorsController', () => {
 
   const mockVendorsService = {
     findOne: jest.fn(),
+    findByUserId: jest.fn(),
     update: jest.fn(),
   };
 
@@ -25,19 +26,21 @@ describe('MeVendorsController', () => {
   afterEach(() => jest.clearAllMocks());
 
   describe('getMyProfile', () => {
-    it('should call vendorsService.findOne with x-user-id', async () => {
-      mockVendorsService.findOne.mockResolvedValue({});
-      await controller.getMyProfile('uuid-1');
-      expect(service.findOne).toHaveBeenCalledWith('uuid-1');
+    it('should resolve x-user-id to vendor via findByUserId', async () => {
+      mockVendorsService.findByUserId.mockResolvedValue({ id: 'vendor-uuid' });
+      await controller.getMyProfile('42');
+      expect(service.findByUserId).toHaveBeenCalledWith(42);
     });
   });
 
   describe('updateMyProfile', () => {
-    it('should call vendorsService.update with x-user-id and dto', async () => {
+    it('should resolve x-user-id then update by vendor.id', async () => {
+      mockVendorsService.findByUserId.mockResolvedValue({ id: 'vendor-uuid' });
       mockVendorsService.update.mockResolvedValue({});
       const dto: UpdateVendorDto = { name: 'New Name' };
-      await controller.updateMyProfile('uuid-1', dto);
-      expect(service.update).toHaveBeenCalledWith('uuid-1', dto);
+      await controller.updateMyProfile('42', dto);
+      expect(service.findByUserId).toHaveBeenCalledWith(42);
+      expect(service.update).toHaveBeenCalledWith('vendor-uuid', dto);
     });
   });
 });

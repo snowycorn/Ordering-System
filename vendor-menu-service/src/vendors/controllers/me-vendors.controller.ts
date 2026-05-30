@@ -9,11 +9,12 @@ import {
 } from '@nestjs/common';
 import { VendorsService } from '../vendors.service';
 import { UpdateVendorDto } from '../dto/update-vendor.dto';
+import { parseXUserId } from '../../common/parse-x-user-id';
 
 /**
  * 商家自身管理端點（商家端後台）
- * - 需 API Gateway 驗證 JWT 並注入 x-user-id header
- * - 商家只能操作「自己」的資料（透過 x-user-id 做 vendorId 綁定）
+ * - 需 API Gateway 驗證 JWT 並注入 x-user-id header（IAM 數字 userId）
+ * - 商家只能操作「自己」的資料（透過 x-user-id → Vendor.userId 綁定）
  */
 @Controller('api/v1/vendors/me')
 @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
@@ -25,8 +26,8 @@ export class MeVendorsController {
    * 商家查詢自己的完整資料（含 allowedAreas 等後台欄位）。
    */
   @Get()
-  async getMyProfile(@Headers('x-user-id') vendorId: string) {
-    return this.vendorsService.findOne(vendorId);
+  async getMyProfile(@Headers('x-user-id') xUserId: string) {
+    return this.vendorsService.findByUserId(parseXUserId(xUserId));
   }
 
   /**
@@ -35,9 +36,10 @@ export class MeVendorsController {
    */
   @Put()
   async updateMyProfile(
-    @Headers('x-user-id') vendorId: string,
+    @Headers('x-user-id') xUserId: string,
     @Body() updateVendorDto: UpdateVendorDto,
   ) {
-    return this.vendorsService.update(vendorId, updateVendorDto);
+    const vendor = await this.vendorsService.findByUserId(parseXUserId(xUserId));
+    return this.vendorsService.update(vendor.id, updateVendorDto);
   }
 }

@@ -42,6 +42,19 @@ export class VendorsService {
     return vendor;
   }
 
+  /**
+   * 以 IAM 數字 userId 查商家（供 /me* 自管路由：x-user-id → vendor）。
+   */
+  async findByUserId(userId: number) {
+    const vendor = await this.prisma.vendor.findUnique({
+      where: { userId },
+    });
+    if (!vendor) {
+      throw new NotFoundException(`找不到 userId 為 ${userId} 的商家資料`);
+    }
+    return vendor;
+  }
+
   async update(id: string, updateVendorDto: UpdateVendorDto) {
     await this.findOne(id);
     return this.prisma.vendor.update({

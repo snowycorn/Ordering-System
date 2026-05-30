@@ -10,6 +10,7 @@ datasource db {
 
 model Vendor {
   id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       Int?     @unique @map("user_id")  // IAM 數字 userId，供 /me* 自管路由解析
   name         String   @db.VarChar(255)
   category     String?  @db.VarChar(100)        // 商家類別（中式、日式、便當...）
   description  String?  @db.Text                 // 商家描述

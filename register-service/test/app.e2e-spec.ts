@@ -28,7 +28,7 @@ describe('Register Service (E2E)', () => {
   // ── Mocked services ────────────────────────────────────────────────────────
 
   const iamMock = {
-    createVendorUser: jest.fn().mockResolvedValue(undefined),
+    createVendorUser: jest.fn().mockResolvedValue(42),
   };
 
   const vendorMenuMock = {
@@ -94,7 +94,7 @@ describe('Register Service (E2E)', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     // Reset mock defaults
-    iamMock.createVendorUser.mockResolvedValue(undefined);
+    iamMock.createVendorUser.mockResolvedValue(42);
     vendorMenuMock.createVendor.mockResolvedValue(undefined);
     s3Mock.generateDocumentUploadUrl.mockResolvedValue({
       uploadUrl: 'https://s3.example.com/upload',

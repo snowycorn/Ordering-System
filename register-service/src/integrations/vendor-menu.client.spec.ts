@@ -44,38 +44,41 @@ describe('VendorMenuClient', () => {
   describe('createVendor()', () => {
     it('成功（2xx）時不拋出', async () => {
       fetchSpy.mockResolvedValueOnce(mockResponse(201, {}));
-      await expect(client.createVendor('Test Vendor', 'North')).resolves.toBeUndefined();
+      await expect(client.createVendor('Test Vendor', 'North', 42)).resolves.toBeUndefined();
     });
 
-    it('呼叫 POST /api/v1/admin/vendors 帶有 x-user-role: admin header', async () => {
+    it('呼叫 POST /api/v1/admin/vendors 帶有 x-user-role: admin header 與 userId', async () => {
       fetchSpy.mockResolvedValueOnce(mockResponse(201, {}));
-      await client.createVendor('Test Vendor', 'North');
+      await client.createVendor('Test Vendor', 'North', 42);
 
       const call = fetchSpy.mock.calls[0];
       const url = call[0] as string;
       const options = call[1] as RequestInit;
       expect(url).toContain('/api/v1/admin/vendors');
       expect((options.headers as Record<string, string>)['x-user-role']).toBe('admin');
+      const body = JSON.parse(options.body as string) as Record<string, unknown>;
+      expect(body.userId).toBe(42);
     });
 
-    it('factoryZone 為 undefined 時不傳入 body', async () => {
+    it('factoryZone 為 undefined 時不傳入 body，但仍帶 userId', async () => {
       fetchSpy.mockResolvedValueOnce(mockResponse(201, {}));
-      await client.createVendor('Test Vendor', undefined);
+      await client.createVendor('Test Vendor', undefined, 42);
 
       const body = JSON.parse(fetchSpy.mock.calls[0][1].body as string) as Record<string, unknown>;
       expect(body).not.toHaveProperty('factoryZone');
+      expect(body.userId).toBe(42);
     });
 
     it('HTTP 錯誤（非 2xx） → BadRequestException', async () => {
       fetchSpy.mockResolvedValueOnce(mockResponse(500, 'Internal Server Error'));
-      await expect(client.createVendor('Test Vendor', 'North')).rejects.toThrow(
+      await expect(client.createVendor('Test Vendor', 'North', 42)).rejects.toThrow(
         BadRequestException,
       );
     });
 
     it('400 也拋 BadRequestException', async () => {
       fetchSpy.mockResolvedValueOnce(mockResponse(400, 'Bad Request'));
-      await expect(client.createVendor('X', null)).rejects.toThrow(BadRequestException);
+      await expect(client.createVendor('X', null, 42)).rejects.toThrow(BadRequestException);
     });
   });
 });

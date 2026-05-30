@@ -120,11 +120,11 @@ export class ApplicationsService {
     // 1. 產生 24 字元 hex 臨時密碼
     const tempPassword = randomBytes(12).toString('hex');
 
-    // 2. IAM：建立 vendor 帳號（失敗時 status 維持 PENDING，可重試）
-    await this.iamClient.createVendorUser(pending.email, tempPassword);
+    // 2. IAM：建立 vendor 帳號（失敗時 status 維持 PENDING，可重試），取回數字 userId
+    const userId = await this.iamClient.createVendorUser(pending.email, tempPassword);
 
-    // 3. vendor-menu：建立商家記錄（失敗時 status 維持 PENDING，可重試）
-    await this.vendorMenuClient.createVendor(pending.vendorName, pending.factoryZone);
+    // 3. vendor-menu：建立商家記錄並綁定 userId（失敗時 status 維持 PENDING，可重試）
+    await this.vendorMenuClient.createVendor(pending.vendorName, pending.factoryZone, userId);
 
     // 4. 兩個下游都成功後，才寫 DB
     const updated = await this.prisma.pendingVendor.update({

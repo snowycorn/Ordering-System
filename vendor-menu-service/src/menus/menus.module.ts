@@ -3,9 +3,10 @@ import { MenusController } from './menus.controller';
 import { PublicMenusController } from './public-menus.controller';
 import { MenusService } from './menus.service';
 import { S3Module } from '../s3/s3.module';
+import { VendorsModule } from '../vendors/vendors.module';
 
 @Module({
-  imports: [S3Module],
+  imports: [S3Module, VendorsModule],
   controllers: [MenusController, PublicMenusController],
   providers: [MenusService],
 })

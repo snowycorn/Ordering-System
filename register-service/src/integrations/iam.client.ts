@@ -53,11 +53,13 @@ export class IamClient {
   }
 
   /**
-   * 在 IAM 建立 role='vendor' 的帳號。
-   * - 若 email 已存在（409）→ 視為冪等成功（帳號已建，允許 approve 重試）
+   * 在 IAM 建立 role='vendor' 的帳號，回傳該帳號的數字 userId。
+   * - 201 → 解析回傳的 { id }
+   * - 若 email 已存在（409）→ 視為冪等成功，改打 GET /users 以 email 撈回既有 userId
+   *   （核准流程「先建帳號、再建商家、最後寫 DB」，重試時會再次 409，需回傳同一 userId 才能正確綁定）
    * - 其他錯誤 → 丟出，讓 approve() 中斷並維持 PENDING 狀態
    */
-  async createVendorUser(email: string, password: string): Promise<void> {
+  async createVendorUser(email: string, password: string): Promise<number> {
     const token = await this.getAdminToken();
 
     const res = await fetch(`${this.iamUrl}/users`, {
@@ -70,8 +72,8 @@ export class IamClient {
     });
 
     if (res.status === 409) {
-      this.logger.warn(`IAM 帳號 ${email} 已存在，視為冪等成功`);
-      return;
+      this.logger.warn(`IAM 帳號 ${email} 已存在，視為冪等成功，改查既有 userId`);
+      return this.findUserIdByEmail(email, token);
     }
 
     if (!res.ok) {
@@ -79,6 +81,30 @@ export class IamClient {
       throw new BadRequestException(`IAM 建立商家帳號失敗（${res.status}）：${body}`);
     }
 
-    this.logger.log(`IAM 商家帳號已建立：${email}`);
+    const created = (await res.json()) as { id: number };
+    this.logger.log(`IAM 商家帳號已建立：${email}（userId=${created.id}）`);
+    return created.id;
+  }
+
+  /** 以 email 從 IAM 使用者清單撈回數字 userId（供 409 冪等重試使用）。 */
+  private async findUserIdByEmail(email: string, token: string): Promise<number> {
+    const res = await fetch(`${this.iamUrl}/users`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      throw new BadRequestException(`IAM 查詢使用者清單失敗（${res.status}）：${body}`);
+    }
+
+    const users = (await res.json()) as Array<{ id: number; email: string }>;
+    const found = users.find((u) => u.email === email);
+    if (!found) {
+      throw new BadRequestException(
+        `IAM 回報 ${email} 已存在但清單查無此帳號，資料不一致`,
+      );
+    }
+    return found.id;
   }
 }

@@ -13,6 +13,10 @@ describe('MenusController (e2e)', () => {
   let vendorBId: string;
   let menuAId: string;
 
+  // x-user-id 現在帶的是 IAM 數字 userId（由 Vendor.userId 解析回 vendor）
+  const vendorAUserId = 90001;
+  const vendorBUserId = 90002;
+
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -26,12 +30,12 @@ describe('MenusController (e2e)', () => {
 
     // Create 2 fake vendors for testing ownership logic
     const vendorA = await prisma.vendor.create({
-      data: { name: 'Vendor A', category: 'Testing', status: 'ACTIVE' }
+      data: { name: 'Vendor A', category: 'Testing', status: 'ACTIVE', userId: vendorAUserId }
     });
     vendorAId = vendorA.id;
 
     const vendorB = await prisma.vendor.create({
-      data: { name: 'Vendor B', category: 'Testing', status: 'ACTIVE' }
+      data: { name: 'Vendor B', category: 'Testing', status: 'ACTIVE', userId: vendorBUserId }
     });
     vendorBId = vendorB.id;
   });
@@ -47,7 +51,7 @@ describe('MenusController (e2e)', () => {
     it('POST /api/v1/vendors/me/menus - 新增菜單 (Vendor A)', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/vendors/me/menus')
-        .set('x-user-id', vendorAId)
+        .set('x-user-id', String(vendorAUserId))
         .send({ name: 'Menu A', price: 100, dailyLimit: 50 })
         .expect(201);
       
@@ -59,7 +63,7 @@ describe('MenusController (e2e)', () => {
     it('GET /api/v1/vendors/me/menus - 查詢自己的菜單', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/v1/vendors/me/menus')
-        .set('x-user-id', vendorAId)
+        .set('x-user-id', String(vendorAUserId))
         .expect(200);
       
       expect(Array.isArray(res.body)).toBe(true);
@@ -70,7 +74,7 @@ describe('MenusController (e2e)', () => {
     it('GET /api/v1/vendors/me/menus/upload-image-url - 取得 S3 上傳連結', async () => {
       const res = await request(app.getHttpServer())
         .get(encodeURI('/api/v1/vendors/me/menus/upload-image-url?contentType=image/jpeg'))
-        .set('x-user-id', vendorAId)
+        .set('x-user-id', String(vendorAUserId))
         .expect(200);
       
       expect(res.body.uploadUrl).toBeDefined();
@@ -82,7 +86,7 @@ describe('MenusController (e2e)', () => {
       const futureDate = '2099-12-31';
       const res = await request(app.getHttpServer())
         .put(`/api/v1/vendors/me/menus/${menuAId}/quotas`)
-        .set('x-user-id', vendorAId)
+        .set('x-user-id', String(vendorAUserId))
         .send({ targetDate: futureDate, maxQuantity: 20 })
         .expect(200);
       
@@ -93,7 +97,7 @@ describe('MenusController (e2e)', () => {
       const pastDate = '2000-01-01';
       await request(app.getHttpServer())
         .put(`/api/v1/vendors/me/menus/${menuAId}/quotas`)
-        .set('x-user-id', vendorAId)
+        .set('x-user-id', String(vendorAUserId))
         .send({ targetDate: pastDate, maxQuantity: 20 })
         .expect(400); // BadRequest
     });
@@ -103,7 +107,7 @@ describe('MenusController (e2e)', () => {
     it('PUT /api/v1/vendors/me/menus/:menuId - 修改別人的菜單 (Vendor B 改 A)', async () => {
       await request(app.getHttpServer())
         .put(`/api/v1/vendors/me/menus/${menuAId}`)
-        .set('x-user-id', vendorBId)
+        .set('x-user-id', String(vendorBUserId))
         .send({ price: 200 })
         .expect(404);
     });
@@ -111,7 +115,7 @@ describe('MenusController (e2e)', () => {
     it('PUT /api/v1/vendors/me/menus/:menuId/quotas - 設定別人的配額', async () => {
       await request(app.getHttpServer())
         .put(`/api/v1/vendors/me/menus/${menuAId}/quotas`)
-        .set('x-user-id', vendorBId)
+        .set('x-user-id', String(vendorBUserId))
         .send({ targetDate: '2099-12-31', maxQuantity: 10 })
         .expect(404);
     });
@@ -119,7 +123,7 @@ describe('MenusController (e2e)', () => {
     it('DELETE /api/v1/vendors/me/menus/:menuId - 刪除別人的菜單', async () => {
       await request(app.getHttpServer())
         .delete(`/api/v1/vendors/me/menus/${menuAId}`)
-        .set('x-user-id', vendorBId)
+        .set('x-user-id', String(vendorBUserId))
         .expect(404);
     });
   });
@@ -137,7 +141,7 @@ describe('MenusController (e2e)', () => {
     it('DELETE /api/v1/vendors/me/menus/:menuId - 軟刪除 (Vendor A)', async () => {
       const res = await request(app.getHttpServer())
         .delete(`/api/v1/vendors/me/menus/${menuAId}`)
-        .set('x-user-id', vendorAId)
+        .set('x-user-id', String(vendorAUserId))
         .expect(200);
       
       expect(res.body.isActive).toBe(false);

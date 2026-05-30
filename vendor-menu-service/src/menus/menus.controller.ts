@@ -13,11 +13,13 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { MenusService } from './menus.service';
+import { VendorsService } from '../vendors/vendors.service';
 import { S3Service } from '../s3/s3.service';
 import { CreateMenuDto } from './dto/create-menu.dto';
 import { UpdateMenuDto } from './dto/update-menu.dto';
 import { SetDailyQuotaDto } from './dto/set-daily-quota.dto';
 import { GetUploadUrlDto } from './dto/get-upload-url.dto';
+import { parseXUserId } from '../common/parse-x-user-id';
 
 // 路徑設計為 /api/v1/vendors/me/menus，確保商家只能操作自己的菜單
 @Controller('api/v1/vendors/me/menus')
@@ -25,8 +27,18 @@ import { GetUploadUrlDto } from './dto/get-upload-url.dto';
 export class MenusController {
   constructor(
     private readonly menusService: MenusService,
+    private readonly vendorsService: VendorsService,
     private readonly s3Service: S3Service,
   ) {}
+
+  /**
+   * 把 Gateway 注入的 x-user-id（IAM 數字 userId）解析成該商家的 Vendor.id（UUID）。
+   * 無對應商家時丟 404，與其他 handler 行為一致。
+   */
+  private async resolveVendorId(xUserId: string): Promise<string> {
+    const vendor = await this.vendorsService.findByUserId(parseXUserId(xUserId));
+    return vendor.id;
+  }
 
   /**
    * GET /api/v1/vendors/me/menus/upload-image-url?contentType=image/jpeg
@@ -43,56 +55,63 @@ export class MenusController {
   @Get('upload-image-url')
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   async getUploadImageUrl(
-    @Headers('x-user-id') vendorId: string,
+    @Headers('x-user-id') xUserId: string,
     @Query() query: GetUploadUrlDto,
   ) {
+    const vendorId = await this.resolveVendorId(xUserId);
     return this.s3Service.generateMenuImageUploadUrl(vendorId, query.contentType);
   }
 
   @Post()
   async create(
-    @Headers('x-user-id') vendorId: string,
+    @Headers('x-user-id') xUserId: string,
     @Body() createMenuDto: CreateMenuDto,
   ) {
+    const vendorId = await this.resolveVendorId(xUserId);
     return this.menusService.create(vendorId, createMenuDto);
   }
 
   @Get()
-  async findAll(@Headers('x-user-id') vendorId: string) {
+  async findAll(@Headers('x-user-id') xUserId: string) {
+    const vendorId = await this.resolveVendorId(xUserId);
     return this.menusService.findAllByVendor(vendorId);
   }
 
   @Get(':menuId')
   async findOne(
-    @Headers('x-user-id') vendorId: string,
+    @Headers('x-user-id') xUserId: string,
     @Param('menuId') menuId: string,
   ) {
+    const vendorId = await this.resolveVendorId(xUserId);
     return this.menusService.findOneByVendor(vendorId, menuId);
   }
 
   @Put(':menuId')
   async update(
-    @Headers('x-user-id') vendorId: string,
+    @Headers('x-user-id') xUserId: string,
     @Param('menuId') menuId: string,
     @Body() updateMenuDto: UpdateMenuDto,
   ) {
+    const vendorId = await this.resolveVendorId(xUserId);
     return this.menusService.update(vendorId, menuId, updateMenuDto);
   }
 
   @Delete(':menuId')
   async remove(
-    @Headers('x-user-id') vendorId: string,
+    @Headers('x-user-id') xUserId: string,
     @Param('menuId') menuId: string,
   ) {
+    const vendorId = await this.resolveVendorId(xUserId);
     return this.menusService.remove(vendorId, menuId);
   }
 
   @Put(':menuId/quotas')
   async setDailyQuota(
-    @Headers('x-user-id') vendorId: string,
+    @Headers('x-user-id') xUserId: string,
     @Param('menuId') menuId: string,
     @Body() setDailyQuotaDto: SetDailyQuotaDto,
   ) {
+    const vendorId = await this.resolveVendorId(xUserId);
     return this.menusService.setDailyQuota(vendorId, menuId, setDailyQuotaDto);
   }
 }

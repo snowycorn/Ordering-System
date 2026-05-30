@@ -11,5 +11,6 @@ import { AdminVendorsController } from './controllers/admin-vendors.controller';
     AdminVendorsController,   // /api/v1/admin/vendors
   ],
   providers: [VendorsService],
+  exports: [VendorsService],
 })
 export class VendorsModule {}

@@ -184,7 +184,7 @@ describe('ApplicationsService', () => {
   describe('approve()', () => {
     it('全部成功時依序呼叫 IAM → vendor-menu → DB update，回傳含 tempPassword', async () => {
       prismaMock.pendingVendor.findUnique.mockResolvedValue(makePending());
-      iamMock.createVendorUser.mockResolvedValue(undefined);
+      iamMock.createVendorUser.mockResolvedValue(42);
       vendorMenuMock.createVendor.mockResolvedValue(undefined);
       const approved = makePending({ status: 'APPROVED' });
       prismaMock.pendingVendor.update.mockResolvedValue(approved);
@@ -196,7 +196,7 @@ describe('ApplicationsService', () => {
         'vendor@test.com',
         expect.any(String),
       );
-      expect(vendorMenuMock.createVendor).toHaveBeenCalledWith('Test Vendor', 'North');
+      expect(vendorMenuMock.createVendor).toHaveBeenCalledWith('Test Vendor', 'North', 42);
       expect(prismaMock.pendingVendor.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ status: 'APPROVED' }),
@@ -220,7 +220,7 @@ describe('ApplicationsService', () => {
 
     it('vendor-menu 失敗時拋異常，DB update 不被呼叫', async () => {
       prismaMock.pendingVendor.findUnique.mockResolvedValue(makePending());
-      iamMock.createVendorUser.mockResolvedValue(undefined);
+      iamMock.createVendorUser.mockResolvedValue(42);
       vendorMenuMock.createVendor.mockRejectedValue(
         new BadRequestException('vendor-menu error'),
       );
@@ -233,7 +233,7 @@ describe('ApplicationsService', () => {
 
     it('email 寄送失敗（mailer 內部 catch）時 approve 仍成功', async () => {
       prismaMock.pendingVendor.findUnique.mockResolvedValue(makePending());
-      iamMock.createVendorUser.mockResolvedValue(undefined);
+      iamMock.createVendorUser.mockResolvedValue(42);
       vendorMenuMock.createVendor.mockResolvedValue(undefined);
       prismaMock.pendingVendor.update.mockResolvedValue(makePending({ status: 'APPROVED' }));
       // Simulate MailerService.sendWelcomeEmail graceful behavior:

@@ -99,14 +99,30 @@ describe('IamClient', () => {
         .mockResolvedValueOnce(mockResponse(200, { token: 'cached-token' }));
     });
 
-    it('201 成功時不拋出', async () => {
-      fetchSpy.mockResolvedValueOnce(mockResponse(201, {}));
-      await expect(client.createVendorUser('v@test.com', 'pw')).resolves.toBeUndefined();
+    it('201 成功時回傳 IAM 數字 userId', async () => {
+      fetchSpy.mockResolvedValueOnce(mockResponse(201, { id: 42, email: 'v@test.com' }));
+      await expect(client.createVendorUser('v@test.com', 'pw')).resolves.toBe(42);
     });
 
-    it('409 Conflict → 視為冪等成功，不拋出', async () => {
-      fetchSpy.mockResolvedValueOnce(mockResponse(409, { message: 'already exists' }));
-      await expect(client.createVendorUser('v@test.com', 'pw')).resolves.toBeUndefined();
+    it('409 Conflict → 視為冪等成功，改打 GET /users 撈回既有 userId', async () => {
+      fetchSpy
+        .mockResolvedValueOnce(mockResponse(409, { message: 'already exists' }))
+        .mockResolvedValueOnce(
+          mockResponse(200, [
+            { id: 7, email: 'other@test.com' },
+            { id: 42, email: 'v@test.com' },
+          ]),
+        );
+      await expect(client.createVendorUser('v@test.com', 'pw')).resolves.toBe(42);
+    });
+
+    it('409 但清單查無此 email → BadRequestException', async () => {
+      fetchSpy
+        .mockResolvedValueOnce(mockResponse(409, { message: 'already exists' }))
+        .mockResolvedValueOnce(mockResponse(200, [{ id: 7, email: 'other@test.com' }]));
+      await expect(client.createVendorUser('v@test.com', 'pw')).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('500 錯誤 → BadRequestException', async () => {

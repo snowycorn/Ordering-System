@@ -10,6 +10,8 @@ describe('Vendors (e2e)', () => {
   let prisma: PrismaService;
   
   let testVendorId: string;
+  // x-user-id 帶 IAM 數字 userId，由 Vendor.userId 解析回 vendor
+  const testVendorUserId = 90050;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -61,7 +63,7 @@ describe('Vendors (e2e)', () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/admin/vendors')
         .set(adminHeader)
-        .send({ name: 'E2E Vendor', category: 'Test', factoryZone: 'A廠' })
+        .send({ name: 'E2E Vendor', category: 'Test', factoryZone: 'A廠', userId: testVendorUserId })
         .expect(201);
       
       expect(res.body.id).toBeDefined();
@@ -112,35 +114,33 @@ describe('Vendors (e2e)', () => {
     it('GET /me - 成功', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/v1/vendors/me')
-        .set('x-user-id', testVendorId)
+        .set('x-user-id', String(testVendorUserId))
         .expect(200);
-      
+
       expect(res.body.id).toBe(testVendorId);
     });
 
     it('PUT /me - 成功', async () => {
       const res = await request(app.getHttpServer())
         .put('/api/v1/vendors/me')
-        .set('x-user-id', testVendorId)
+        .set('x-user-id', String(testVendorUserId))
         .send({ name: 'E2E Vendor Updated' })
         .expect(200);
-      
+
       expect(res.body.name).toBe('E2E Vendor Updated');
     });
 
-    it('GET /me - 失敗 (不存在的 ID)', async () => {
-      const fakeVendorId = '00000000-0000-0000-0000-000000000000';
+    it('GET /me - 失敗 (不存在的 userId)', async () => {
       await request(app.getHttpServer())
         .get('/api/v1/vendors/me')
-        .set('x-user-id', fakeVendorId)
+        .set('x-user-id', '99999999')
         .expect(404);
     });
 
-    it('PUT /me - 失敗 (不存在的 ID)', async () => {
-      const fakeVendorId = '00000000-0000-0000-0000-000000000000';
+    it('PUT /me - 失敗 (不存在的 userId)', async () => {
       await request(app.getHttpServer())
         .put('/api/v1/vendors/me')
-        .set('x-user-id', fakeVendorId)
+        .set('x-user-id', '99999999')
         .send({ name: 'Hacked Vendor' })
         .expect(404);
     });

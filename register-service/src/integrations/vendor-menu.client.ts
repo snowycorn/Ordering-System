@@ -24,9 +24,14 @@ export class VendorMenuClient {
   /**
    * 在 vendor-menu-service 建立商家記錄（對應 vendors 表）。
    * 直接呼叫 POST /api/v1/admin/vendors，帶 x-user-role: admin header。
+   * userId：IAM 數字 userId，寫進 Vendor.userId 供商家自管 /me* 路由解析。
    */
-  async createVendor(name: string, factoryZone?: string | null): Promise<void> {
-    const body: Record<string, unknown> = { name };
+  async createVendor(
+    name: string,
+    factoryZone: string | null | undefined,
+    userId: number,
+  ): Promise<void> {
+    const body: Record<string, unknown> = { name, userId };
     if (factoryZone) body.factoryZone = factoryZone;
 
     const res = await fetch(`${this.vendorMenuUrl}/api/v1/admin/vendors`, {

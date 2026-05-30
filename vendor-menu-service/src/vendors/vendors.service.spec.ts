@@ -80,6 +80,24 @@ describe('VendorsService', () => {
     });
   });
 
+  describe('findByUserId', () => {
+    it('should return a vendor matched by userId', async () => {
+      const vendor = { id: 'uuid-1', userId: 42, name: 'Vendor 1' };
+      mockPrismaService.vendor.findUnique.mockResolvedValue(vendor);
+
+      const result = await service.findByUserId(42);
+
+      expect(prisma.vendor.findUnique).toHaveBeenCalledWith({ where: { userId: 42 } });
+      expect(result).toEqual(vendor);
+    });
+
+    it('should throw NotFoundException if no vendor has that userId', async () => {
+      mockPrismaService.vendor.findUnique.mockResolvedValue(null);
+
+      await expect(service.findByUserId(99999)).rejects.toThrow(NotFoundException);
+    });
+  });
+
   describe('update', () => {
     it('should update and return the vendor if it exists', async () => {
       const vendor = { id: 'uuid-1', name: 'Vendor 1' };
