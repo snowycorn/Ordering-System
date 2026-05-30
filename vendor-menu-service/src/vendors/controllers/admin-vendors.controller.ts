@@ -54,4 +54,14 @@ export class AdminVendorsController {
   async update(@Param('id') id: string, @Body() updateVendorDto: UpdateVendorDto) {
     return this.vendorsService.update(id, updateVendorDto);
   }
+
+  /**
+   * POST /api/v1/admin/vendors/:id/violation-points
+   * 為指定商家的違規點數 +1（每次呼叫累加 1）。
+   */
+  @Post(':id/violation-points')
+  @HttpCode(HttpStatus.OK)
+  async addViolationPoint(@Param('id') id: string) {
+    return this.vendorsService.addViolationPoint(id);
+  }
 }

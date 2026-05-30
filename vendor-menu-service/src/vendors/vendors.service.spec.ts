@@ -142,8 +142,31 @@ describe('VendorsService', () => {
 
     it('should throw NotFoundException if vendor to update does not exist', async () => {
       mockPrismaService.vendor.findUnique.mockResolvedValue(null);
-      
+
       await expect(service.update('uuid-999', {})).rejects.toThrow(NotFoundException);
+      expect(prisma.vendor.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('addViolationPoint', () => {
+    it('should atomically increment violationPoints by 1', async () => {
+      mockPrismaService.vendor.findUnique.mockResolvedValue({ id: 'uuid-1' });
+      const updated = { id: 'uuid-1', violationPoints: 3 };
+      mockPrismaService.vendor.update.mockResolvedValue(updated);
+
+      const result = await service.addViolationPoint('uuid-1');
+
+      expect(prisma.vendor.update).toHaveBeenCalledWith({
+        where: { id: 'uuid-1' },
+        data: { violationPoints: { increment: 1 } },
+      });
+      expect(result).toEqual(updated);
+    });
+
+    it('should throw NotFoundException if vendor does not exist', async () => {
+      mockPrismaService.vendor.findUnique.mockResolvedValue(null);
+
+      await expect(service.addViolationPoint('uuid-999')).rejects.toThrow(NotFoundException);
       expect(prisma.vendor.update).not.toHaveBeenCalled();
     });
   });

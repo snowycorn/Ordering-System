@@ -81,6 +81,18 @@ export class VendorsService {
     });
   }
 
+  /**
+   * 為指定商家的違規點數 +1（管理員專用）。
+   * 使用 Prisma 原子 increment，避免並發呼叫時遺失更新。
+   */
+  async addViolationPoint(id: string) {
+    await this.findOne(id);
+    return this.prisma.vendor.update({
+      where: { id },
+      data: { violationPoints: { increment: 1 } },
+    });
+  }
+
   // ---- 公開查詢（員工用）----
 
   /**

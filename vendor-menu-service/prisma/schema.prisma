@@ -15,6 +15,7 @@ model Vendor {
   category     String?  @db.VarChar(100)        // 商家類別（中式、日式、便當...）
   description  String?  @db.Text                 // 商家描述
   factoryZone  String?  @map("factory_zone") @db.VarChar(100) // 主要服務廠區
+  violationPoints Int   @default(0) @map("violation_points") // 違規點數，管理員累加
   status       String   @default("ACTIVE") @db.VarChar(50)
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz

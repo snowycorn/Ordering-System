@@ -150,6 +150,7 @@ docker-compose down -v
 | `POST` | `/api/v1/vendors` | **建立新商家帳號**（僅管理員可用，回傳 201） |
 | `GET` | `/api/v1/vendors/:id` | 查詢指定商家 |
 | `PUT` | `/api/v1/vendors/:id` | 更新指定商家資料 |
+| `POST` | `/api/v1/vendors/:id/violation-points` | 違規點數 +1（每次呼叫累加 1，回傳 200） |
 
 > **角色驗證機制**：API Gateway 驗證 JWT 後，將使用者角色寫入 `x-user-role` Header（值如 `admin` / `vendor` / `employee`）。服務內的 `RolesGuard` 讀取此 Header 並對照 `@Roles()` 裝飾器；未標記 `@Roles()` 的端點一律放行。
 

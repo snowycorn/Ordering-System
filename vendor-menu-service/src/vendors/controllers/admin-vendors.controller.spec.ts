@@ -12,6 +12,7 @@ describe('AdminVendorsController', () => {
     create: jest.fn(),
     findOne: jest.fn(),
     update: jest.fn(),
+    addViolationPoint: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -49,6 +50,14 @@ describe('AdminVendorsController', () => {
       const dto: UpdateVendorDto = { name: 'Updated' };
       await controller.update('uuid-1', dto);
       expect(service.update).toHaveBeenCalledWith('uuid-1', dto);
+    });
+  });
+
+  describe('addViolationPoint', () => {
+    it('should call vendorsService.addViolationPoint with id', async () => {
+      mockVendorsService.addViolationPoint.mockResolvedValue({ id: 'uuid-1', violationPoints: 1 });
+      await controller.addViolationPoint('uuid-1');
+      expect(service.addViolationPoint).toHaveBeenCalledWith('uuid-1');
     });
   });
 });
