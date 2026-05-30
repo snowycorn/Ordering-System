@@ -1,0 +1,59 @@
+// vendor-menu-service/prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Vendor {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name         String   @db.VarChar(255)
+  category     String?  @db.VarChar(100)        // 商家類別（中式、日式、便當...）
+  description  String?  @db.Text                 // 商家描述
+  factoryZone  String?  @map("factory_zone") @db.VarChar(100) // 主要服務廠區
+  allowedAreas Json     @default("[]") @map("allowed_areas")  // 多廠區授權
+  status       String   @default("ACTIVE") @db.VarChar(50)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  menus        Menu[]
+
+  @@map("vendors")
+}
+
+model Menu {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vendorId    String   @map("vendor_id") @db.Uuid
+  name        String   @db.VarChar(255)
+  price       Decimal  @db.Decimal(10, 2)
+  imageUrl    String?  @map("image_url") @db.Text
+  dailyLimit  Int?     @map("daily_limit")        // 預設每日限量（null 表示不限）
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  vendor      Vendor       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  dailyQuotas DailyQuota[]
+
+  @@map("menus")
+  @@index([vendorId])
+}
+
+// 每日特定限量覆蓋表（override dailyLimit for a specific date）
+model DailyQuota {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  menuId      String   @map("menu_id") @db.Uuid
+  targetDate  DateTime @map("target_date") @db.Date
+  maxQuantity Int      @map("max_quantity")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  menu        Menu     @relation(fields: [menuId], references: [id], onDelete: Cascade)
+
+  @@map("daily_quotas")
+  @@unique([menuId, targetDate])
+  @@index([menuId, targetDate])
+}

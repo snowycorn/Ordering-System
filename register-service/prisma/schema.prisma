@@ -1,0 +1,32 @@
+// register-service/prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// 待審核暫存表（Register Service 專屬）。
+// 外部商家填寫入駐表單後，資料與 PDF 在 S3 的位址會先落在這張表，
+// id 即 technical_doc 所述的「隨機 Key」，同時當作申請人查詢進度用的不可猜測識別碼。
+// 審核通過後由 RabbitMQ 事件通知 IAM 與 Vendor 服務正式建立資料，本表只負責入駐流程本身。
+model PendingVendor {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vendorName   String    @map("vendor_name") @db.VarChar(255)
+  email        String    @db.VarChar(255) // 聯絡 email，核准後作為 IAM 建立帳號的登入帳號
+  phone        String?   @db.VarChar(50)
+  factoryZone  String?   @map("factory_zone") @db.VarChar(100) // 申請服務的廠區
+  documentsKey String?   @map("documents_url") @db.Text // 營登 PDF 在私有 S3 Bucket 的 object key
+  status       String    @default("PENDING") @db.VarChar(50) // PENDING | APPROVED | REJECTED
+  reviewNotes  String?   @map("review_notes") @db.Text // 福委會審核備註 / 駁回原因
+  reviewedBy   String?   @map("reviewed_by") @db.VarChar(255) // 審核者（福委會人員）識別
+  reviewedAt   DateTime? @map("reviewed_at") @db.Timestamptz
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("pending_vendors")
+  @@index([status])
+  @@index([email])
+}
