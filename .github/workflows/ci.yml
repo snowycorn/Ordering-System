@@ -1,0 +1,203 @@
+name: Deploy Ordering Services (EC2-B)
+
+# main 分支有兩個服務任一變更時觸發：先測試，再部署到 EC2-B。
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'vendor-menu-service/**'
+      - 'register-service/**'
+      - '.github/workflows/ci.yml'
+
+# 同一分支同時只跑一條部署管線，避免兩次 push 互相覆蓋。
+concurrency:
+  group: deploy-ordering-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ── 1. 測試（在 GitHub Runner 上跑，使用臨時 Postgres） ───────────────────────
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres-vendor-menu:
+        image: postgres:15
+        env:
+          POSTGRES_USER: myuser
+          POSTGRES_PASSWORD: mypassword
+          POSTGRES_DB: vendor_menu_test_db
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      postgres-register:
+        image: postgres:15
+        env:
+          POSTGRES_USER: myuser
+          POSTGRES_PASSWORD: mypassword
+          POSTGRES_DB: register_test_db
+        ports: ['5433:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Test vendor-menu-service
+        working-directory: vendor-menu-service
+        env:
+          DATABASE_URL: postgresql://myuser:mypassword@localhost:5432/vendor_menu_test_db
+          AWS_REGION: ap-northeast-1
+          AWS_S3_BUCKET_NAME: local-dev-bucket
+        run: |
+          npm ci
+          npx prisma generate
+          npx prisma migrate deploy
+          npm test
+
+      - name: Test register-service
+        working-directory: register-service
+        env:
+          DATABASE_URL: postgresql://myuser:mypassword@localhost:5433/register_test_db
+          AWS_REGION: ap-northeast-1
+          AWS_S3_BUCKET_NAME: local-dev-bucket
+          IAM_SERVICE_URL: http://localhost:3001
+          VENDOR_MENU_SERVICE_URL: http://localhost:3007
+          INTERNAL_ADMIN_EMAIL: admin@test.com
+          INTERNAL_ADMIN_PASSWORD: test123
+        run: |
+          npm ci
+          npx prisma generate
+          npx prisma migrate deploy
+          npm test
+
+  # ── 2. 部署（測試通過後 SSH 進 EC2-B） ───────────────────────────────────────
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      # 2-A. 寫入共用環境變數檔（之後兩個服務的 .env 從這裡讀取）
+      - name: Write shared .env to EC2-B
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_B_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_B_SSH_KEY }}
+          script: |
+            mkdir -p ~/.config/ordering
+            cat > ~/.config/ordering/.env << 'ENVEOF'
+            NODE_ENV=production
+            RDS_HOST=${{ secrets.RDS_B_HOST }}
+            DB_USER=postgres
+            DB_PASSWORD=${{ secrets.RDS_B_PASS }}
+            AWS_REGION=ap-northeast-1
+            AWS_S3_BUCKET_NAME_MENU=${{ secrets.AWS_S3_BUCKET_NAME_MENU }}
+            AWS_S3_BUCKET_NAME_REGISTER=${{ secrets.AWS_S3_BUCKET_NAME_REGISTER }}
+            IAM_SERVICE_URL=http://${{ secrets.EC2_A_PRIVATE_IP }}:3001
+            VENDOR_MENU_SERVICE_URL=http://localhost:3007
+            INTERNAL_ADMIN_EMAIL=admin1@test.com
+            INTERNAL_ADMIN_PASSWORD=${{ secrets.INTERNAL_ADMIN_PASSWORD }}
+            ENVEOF
+            # 選填：IAM User Access Key（改用 Instance Profile 後可移除這兩個 Secret）
+            [ -n "${{ secrets.AWS_ACCESS_KEY_ID }}" ] && \
+              echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> ~/.config/ordering/.env
+            [ -n "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ] && \
+              echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> ~/.config/ordering/.env
+            # 選填：SMTP（沒設則歡迎信只寫 log，不影響 approve）
+            [ -n "${{ secrets.SMTP_USER }}" ] && cat >> ~/.config/ordering/.env << 'SMTPEOF'
+            SMTP_HOST=smtp.gmail.com
+            SMTP_PORT=587
+            SMTP_USER=${{ secrets.SMTP_USER }}
+            SMTP_PASS=${{ secrets.SMTP_PASS }}
+            EMAIL_FROM=${{ secrets.EMAIL_FROM }}
+            SMTPEOF
+            chmod 600 ~/.config/ordering/.env
+
+      # 2-B. 拉新程式碼、build、產生服務 .env、migrate、PM2 重啟
+      - name: Deploy to EC2-B
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_B_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_B_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            # 載入共用設定（NODE_ENV 等未 export，不會影響 npm install 裝 devDeps）
+            source ~/.config/ordering/.env
+
+            # 首次部署 clone，之後 pull
+            if [ ! -d ~/app/.git ]; then
+              git clone https://github.com/${{ github.repository }}.git ~/app
+            fi
+            cd ~/app
+            git pull origin main
+
+            # ── vendor-menu-service ───────────────────────────────────────────
+            cd ~/app/vendor-menu-service
+            npm install
+            cat > .env << EOF
+            NODE_ENV=production
+            PORT=3007
+            DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@${RDS_HOST}:5432/vendor_menu_db?sslmode=require
+            AWS_REGION=${AWS_REGION}
+            AWS_S3_BUCKET_NAME=${AWS_S3_BUCKET_NAME_MENU}
+            $([ -n "${AWS_ACCESS_KEY_ID:-}" ] && echo "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}")
+            $([ -n "${AWS_SECRET_ACCESS_KEY:-}" ] && echo "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}")
+            EOF
+            npx prisma generate
+            npx prisma migrate deploy
+            npm run build
+            npm prune --omit=dev
+
+            # ── register-service ──────────────────────────────────────────────
+            cd ~/app/register-service
+            npm install
+            cat > .env << EOF
+            NODE_ENV=production
+            PORT=3008
+            DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@${RDS_HOST}:5432/register_db?sslmode=require
+            AWS_REGION=${AWS_REGION}
+            AWS_S3_BUCKET_NAME=${AWS_S3_BUCKET_NAME_REGISTER}
+            $([ -n "${AWS_ACCESS_KEY_ID:-}" ] && echo "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}")
+            $([ -n "${AWS_SECRET_ACCESS_KEY:-}" ] && echo "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}")
+            IAM_SERVICE_URL=${IAM_SERVICE_URL}
+            VENDOR_MENU_SERVICE_URL=${VENDOR_MENU_SERVICE_URL}
+            INTERNAL_ADMIN_EMAIL=${INTERNAL_ADMIN_EMAIL}
+            INTERNAL_ADMIN_PASSWORD=${INTERNAL_ADMIN_PASSWORD}
+            $([ -n "${SMTP_HOST:-}" ] && echo "SMTP_HOST=${SMTP_HOST}")
+            $([ -n "${SMTP_PORT:-}" ] && echo "SMTP_PORT=${SMTP_PORT}")
+            $([ -n "${SMTP_USER:-}" ] && echo "SMTP_USER=${SMTP_USER}")
+            $([ -n "${SMTP_PASS:-}" ] && echo "SMTP_PASS=${SMTP_PASS}")
+            $([ -n "${EMAIL_FROM:-}" ] && echo "EMAIL_FROM=${EMAIL_FROM}")
+            EOF
+            npx prisma generate
+            npx prisma migrate deploy
+            npm run build
+            npm prune --omit=dev
+
+            # ── 啟動 or 熱重載 ────────────────────────────────────────────────
+            if pm2 list | grep -q 'vendor-menu'; then
+              pm2 reload vendor-menu --update-env
+              pm2 reload register --update-env
+            else
+              pm2 start ~/app/vendor-menu-service/dist/main.js --name vendor-menu
+              pm2 start ~/app/register-service/dist/main.js --name register
+              pm2 save
+            fi
+
+            # ── 健康檢查 ──────────────────────────────────────────────────────
+            sleep 5
+            curl -sf http://localhost:3007/health || exit 1
+            curl -sf http://localhost:3008/health || exit 1
+            echo "✅ Deploy succeeded"
