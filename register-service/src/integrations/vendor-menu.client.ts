@@ -1,5 +1,10 @@
 // src/integrations/vendor-menu.client.ts
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 /**
@@ -45,6 +50,13 @@ export class VendorMenuClient {
 
     if (!res.ok) {
       const responseBody = await res.text();
+      // 409：該 userId 已綁定商家（email 早已核准過）→ 透傳為 Conflict，
+      // 讓 approve 回明確的「此帳號已有商家」而非籠統的 400。
+      if (res.status === 409) {
+        throw new ConflictException(
+          `此 email 已核准過、該帳號已綁定商家：${responseBody}`,
+        );
+      }
       throw new BadRequestException(
         `vendor-menu 建立商家記錄失敗（${res.status}）：${responseBody}`,
       );

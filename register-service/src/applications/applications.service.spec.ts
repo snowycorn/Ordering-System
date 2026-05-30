@@ -49,6 +49,7 @@ const s3Mock = {
 
 const iamMock = {
   createVendorUser: jest.fn(),
+  deleteUser: jest.fn(),
 };
 
 const vendorMenuMock = {
@@ -218,17 +219,46 @@ describe('ApplicationsService', () => {
       expect(prismaMock.pendingVendor.update).not.toHaveBeenCalled();
     });
 
-    it('vendor-menu 失敗時拋異常，DB update 不被呼叫', async () => {
+    it('vendor-menu 失敗時補償刪除 IAM 帳號、拋出原始錯誤，DB update 不被呼叫', async () => {
       prismaMock.pendingVendor.findUnique.mockResolvedValue(makePending());
       iamMock.createVendorUser.mockResolvedValue(42);
       vendorMenuMock.createVendor.mockRejectedValue(
         new BadRequestException('vendor-menu error'),
       );
+      iamMock.deleteUser.mockResolvedValue(undefined);
 
       await expect(service.approve(FAKE_ID, 'admin1', {})).rejects.toThrow(
         BadRequestException,
       );
+      // 補償：以剛建的 userId 刪除 IAM 帳號
+      expect(iamMock.deleteUser).toHaveBeenCalledWith(42);
       expect(prismaMock.pendingVendor.update).not.toHaveBeenCalled();
+    });
+
+    it('vendor-menu 失敗且補償刪除也失敗時，仍拋出原始錯誤（不被補償錯誤掩蓋）', async () => {
+      prismaMock.pendingVendor.findUnique.mockResolvedValue(makePending());
+      iamMock.createVendorUser.mockResolvedValue(42);
+      vendorMenuMock.createVendor.mockRejectedValue(
+        new BadRequestException('vendor-menu error'),
+      );
+      iamMock.deleteUser.mockRejectedValue(new Error('IAM delete failed'));
+
+      await expect(service.approve(FAKE_ID, 'admin1', {})).rejects.toThrow(
+        'vendor-menu error',
+      );
+      expect(iamMock.deleteUser).toHaveBeenCalledWith(42);
+      expect(prismaMock.pendingVendor.update).not.toHaveBeenCalled();
+    });
+
+    it('IAM 建立帳號成功且 vendor-menu 成功時不觸發補償', async () => {
+      prismaMock.pendingVendor.findUnique.mockResolvedValue(makePending());
+      iamMock.createVendorUser.mockResolvedValue(42);
+      vendorMenuMock.createVendor.mockResolvedValue(undefined);
+      prismaMock.pendingVendor.update.mockResolvedValue(makePending({ status: 'APPROVED' }));
+      mailerMock.sendWelcomeEmail.mockResolvedValue(undefined);
+
+      await service.approve(FAKE_ID, 'admin1', {});
+      expect(iamMock.deleteUser).not.toHaveBeenCalled();
     });
 
     it('email 寄送失敗（mailer 內部 catch）時 approve 仍成功', async () => {

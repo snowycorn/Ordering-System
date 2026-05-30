@@ -101,17 +101,19 @@ export class ApplicationsService {
   }
 
   /**
-   * 核准入駐。
+   * 核准入駐（補償式 saga）。
    *
-   * 流程（先打下游 HTTP，成功後才寫 DB，確保可安全重試）：
+   * 流程（先打下游 HTTP，全部成功後才寫 DB）：
    * 1. 產生臨時密碼
-   * 2. 呼叫 IAM 建立 vendor 帳號（409 視為冪等成功）
-   * 3. 呼叫 vendor-menu 建立商家記錄
+   * 2. 呼叫 IAM 建立 vendor 帳號（取回數字 userId）
+   * 3. 呼叫 vendor-menu 建立商家記錄；失敗則「補償」——刪除步驟 2 建的 IAM 帳號，
+   *    回滾成乾淨狀態，再向上拋出原始錯誤
    * 4. 更新 DB status → APPROVED
    * 5. 寄出歡迎信（失敗只記錄，不中斷流程）
    * 6. 回傳核准記錄與 tempPassword（前端可顯示作備用）
    *
-   * 步驟 2 或 3 失敗時拋出例外，status 維持 PENDING，福委會可直接重試。
+   * 步驟 2 失敗：沒有副作用，直接拋出，status 維持 PENDING。
+   * 步驟 3 失敗：補償刪除 IAM 帳號後拋出，status 維持 PENDING，福委會可直接重試。
    */
   async approve(id: string, reviewedBy: string | undefined, dto: ReviewApplicationDto) {
     const pending = await this.findOrThrow(id);
@@ -120,11 +122,16 @@ export class ApplicationsService {
     // 1. 產生 24 字元 hex 臨時密碼
     const tempPassword = randomBytes(12).toString('hex');
 
-    // 2. IAM：建立 vendor 帳號（失敗時 status 維持 PENDING，可重試），取回數字 userId
+    // 2. IAM：建立 vendor 帳號，取回數字 userId（失敗無副作用，直接中斷）
     const userId = await this.iamClient.createVendorUser(pending.email, tempPassword);
 
-    // 3. vendor-menu：建立商家記錄並綁定 userId（失敗時 status 維持 PENDING，可重試）
-    await this.vendorMenuClient.createVendor(pending.vendorName, pending.factoryZone, userId);
+    // 3. vendor-menu：建立商家記錄並綁定 userId；失敗則補償刪除剛建的 IAM 帳號
+    try {
+      await this.vendorMenuClient.createVendor(pending.vendorName, pending.factoryZone, userId);
+    } catch (err) {
+      await this.compensateIamUser(userId);
+      throw err;
+    }
 
     // 4. 兩個下游都成功後，才寫 DB
     const updated = await this.prisma.pendingVendor.update({
@@ -161,6 +168,23 @@ export class ApplicationsService {
   }
 
   // ---- 共用 ----
+
+  /**
+   * 補償：刪除核准流程中已建立的 IAM 帳號。
+   * 補償本身失敗時只記錄錯誤（留下需人工清理的孤兒帳號），
+   * 不覆蓋觸發補償的原始錯誤。
+   */
+  private async compensateIamUser(userId: number): Promise<void> {
+    try {
+      await this.iamClient.deleteUser(userId);
+      this.logger.warn(`已補償：刪除 IAM 帳號 userId=${userId}（vendor-menu 建立失敗）`);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `補償失敗：無法刪除 IAM 帳號 userId=${userId}，請人工清除。原因：${reason}`,
+      );
+    }
+  }
 
   private async findOrThrow(id: string) {
     const pending = await this.prisma.pendingVendor.findUnique({ where: { id } });

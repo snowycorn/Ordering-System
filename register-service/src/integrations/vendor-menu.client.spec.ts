@@ -1,6 +1,6 @@
 // src/integrations/vendor-menu.client.spec.ts
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { VendorMenuClient } from './vendor-menu.client';
 
@@ -79,6 +79,13 @@ describe('VendorMenuClient', () => {
     it('400 也拋 BadRequestException', async () => {
       fetchSpy.mockResolvedValueOnce(mockResponse(400, 'Bad Request'));
       await expect(client.createVendor('X', null, 42)).rejects.toThrow(BadRequestException);
+    });
+
+    it('409（userId 已綁定商家） → ConflictException，而非 BadRequestException', async () => {
+      fetchSpy.mockResolvedValueOnce(
+        mockResponse(409, '此帳號（userId=42）已綁定商家，無法重複建立'),
+      );
+      await expect(client.createVendor('X', null, 42)).rejects.toThrow(ConflictException);
     });
   });
 });

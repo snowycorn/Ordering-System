@@ -1,5 +1,10 @@
 // src/integrations/iam.client.ts
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 /**
@@ -83,8 +88,9 @@ export class IamClient {
   /**
    * 在 IAM 建立 role='vendor' 的帳號，回傳該帳號的數字 userId。
    * - 201 → 解析回傳的 { id }
-   * - 若 email 已存在（409）→ 視為冪等成功，改打 GET /users 以 email 撈回既有 userId
-   *   （核准流程「先建帳號、再建商家、最後寫 DB」，重試時會再次 409，需回傳同一 userId 才能正確綁定）
+   * - 409（email 已存在）→ 丟 ConflictException：此 email 已是商家帳號。
+   *   核准流程採補償式 saga，失敗時會刪除已建的帳號，不會留下半成品，
+   *   因此這裡的 409 必為「真重複」，直接擋下而非當成冪等重試。
    * - 其他錯誤 → 丟出，讓 approve() 中斷並維持 PENDING 狀態
    */
   async createVendorUser(email: string, password: string): Promise<number> {
@@ -97,8 +103,7 @@ export class IamClient {
     });
 
     if (res.status === 409) {
-      this.logger.warn(`IAM 帳號 ${email} 已存在，視為冪等成功，改查既有 userId`);
-      return this.findUserIdByEmail(email, token);
+      throw new ConflictException(`此 email 已是 IAM 帳號，無法重複建立：${email}`);
     }
 
     if (!res.ok) {
@@ -111,25 +116,23 @@ export class IamClient {
     return created.id;
   }
 
-  /** 以 email 從 IAM 使用者清單撈回數字 userId（供 409 冪等重試使用）。 */
-  private async findUserIdByEmail(email: string, token: string): Promise<number> {
-    const res = await fetch(`${this.iamUrl}/users`, {
-      method: 'GET',
+  /**
+   * 刪除 IAM 帳號（補償用）：approve 流程中 vendor-menu 建立失敗時，
+   * 回滾先前在 IAM 建立的 vendor 帳號，避免留下孤兒帳號。
+   */
+  async deleteUser(userId: number): Promise<void> {
+    const token = await this.getAdminToken();
+
+    const res = await fetch(`${this.iamUrl}/users/${userId}`, {
+      method: 'DELETE',
       headers: this.gatewayHeaders(token),
     });
 
     if (!res.ok) {
       const body = await res.text();
-      throw new BadRequestException(`IAM 查詢使用者清單失敗（${res.status}）：${body}`);
+      throw new BadRequestException(`IAM 刪除帳號失敗（${res.status}）：${body}`);
     }
 
-    const users = (await res.json()) as Array<{ id: number; email: string }>;
-    const found = users.find((u) => u.email === email);
-    if (!found) {
-      throw new BadRequestException(
-        `IAM 回報 ${email} 已存在但清單查無此帳號，資料不一致`,
-      );
-    }
-    return found.id;
+    this.logger.log(`IAM 帳號已刪除：userId=${userId}`);
   }
 }

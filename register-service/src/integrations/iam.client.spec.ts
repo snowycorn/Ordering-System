@@ -1,6 +1,6 @@
 // src/integrations/iam.client.spec.ts
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { IamClient } from './iam.client';
 
@@ -104,25 +104,13 @@ describe('IamClient', () => {
       await expect(client.createVendorUser('v@test.com', 'pw')).resolves.toBe(42);
     });
 
-    it('409 Conflict → 視為冪等成功，改打 GET /users 撈回既有 userId', async () => {
-      fetchSpy
-        .mockResolvedValueOnce(mockResponse(409, { message: 'already exists' }))
-        .mockResolvedValueOnce(
-          mockResponse(200, [
-            { id: 7, email: 'other@test.com' },
-            { id: 42, email: 'v@test.com' },
-          ]),
-        );
-      await expect(client.createVendorUser('v@test.com', 'pw')).resolves.toBe(42);
-    });
-
-    it('409 但清單查無此 email → BadRequestException', async () => {
-      fetchSpy
-        .mockResolvedValueOnce(mockResponse(409, { message: 'already exists' }))
-        .mockResolvedValueOnce(mockResponse(200, [{ id: 7, email: 'other@test.com' }]));
+    it('409 Conflict（email 已存在）→ ConflictException，不再冪等重試', async () => {
+      fetchSpy.mockResolvedValueOnce(mockResponse(409, { message: 'already exists' }));
       await expect(client.createVendorUser('v@test.com', 'pw')).rejects.toThrow(
-        BadRequestException,
+        ConflictException,
       );
+      // 不應再額外打 GET /users（login + POST /users 共 2 次）
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
     });
 
     it('500 錯誤 → BadRequestException', async () => {
@@ -170,6 +158,32 @@ describe('IamClient', () => {
       expect(headers['X-User-Role']).toBe('admin');
       expect(headers['X-User-Id']).toBe('99');
       expect(headers['X-User-Email']).toBe('admin@test.com');
+    });
+  });
+
+  // ── deleteUser()（補償用）──────────────────────────────────────────────────
+  describe('deleteUser()', () => {
+    beforeEach(() => {
+      // pre-fill token cache（同 createVendorUser 的模式）
+      fetchSpy.mockResolvedValueOnce(mockResponse(200, { token: 'cached-token' }));
+    });
+
+    it('成功（2xx）時對 /users/:id 發 DELETE、帶 admin 身份 header', async () => {
+      fetchSpy.mockResolvedValueOnce(mockResponse(204, ''));
+      await expect(client.deleteUser(42)).resolves.toBeUndefined();
+
+      const delCall = fetchSpy.mock.calls.find((c) =>
+        (c[0] as string).endsWith('/users/42'),
+      );
+      expect(delCall).toBeDefined();
+      const options = delCall![1] as RequestInit;
+      expect(options.method).toBe('DELETE');
+      expect((options.headers as Record<string, string>)['X-User-Role']).toBe('admin');
+    });
+
+    it('非 2xx → BadRequestException', async () => {
+      fetchSpy.mockResolvedValueOnce(mockResponse(500, 'boom'));
+      await expect(client.deleteUser(42)).rejects.toThrow(BadRequestException);
     });
   });
 });
