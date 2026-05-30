@@ -8,8 +8,10 @@ export const envValidationSchema = Joi.object({
   // PostgreSQL 連線字串（必填）
   DATABASE_URL: Joi.string().required(),
 
-  // AWS 基本設定
-  AWS_REGION: Joi.string().default('ap-northeast-1'),
+  // AWS Region（選填）
+  // 設定時：明確指定（兩種憑證模式均可用）
+  // 不設定：SDK 自動從 EC2 Instance Metadata 取得（僅 Instance Profile 模式有效）
+  AWS_REGION: Joi.string().optional(),
 
   // 私有 S3 Bucket 名稱（存放營登 PDF）：生產環境必填，開發可選
   AWS_S3_BUCKET_NAME: Joi.string().when('NODE_ENV', {

@@ -25,25 +25,33 @@ export interface UploadUrlResult {
 export class S3Service {
   private readonly s3Client: S3Client;
   private readonly bucketName: string;
-  private readonly region: string;
+  private readonly configRegion?: string;
   private readonly cloudfrontDomain?: string;
 
   constructor(private readonly configService: ConfigService) {
-    this.region = configService.get<string>('AWS_REGION', 'ap-northeast-1');
+    this.configRegion = configService.get<string>('AWS_REGION') || undefined;
     this.bucketName = configService.get<string>('AWS_S3_BUCKET_NAME', '');
     this.cloudfrontDomain = configService.get<string>('AWS_CLOUDFRONT_DOMAIN');
 
     /**
-     * 不使用固定的 access key（避免 secret 外洩風險）。
-     * AWS SDK 的 Credential Provider Chain 會依序嘗試：
-     *   1. 環境變數 AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY（本地開發用）
-     *   2. ~/.aws/credentials（本地 CLI profile）
-     *   3. ECS Task Role / EC2 Instance Profile / EKS IRSA（生產環境用）
+     * AWS SDK Credential Provider Chain（兩種模式自動切換）：
+     *   1. 環境變數 AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY → IAM User Access Key 模式
+     *   2. EC2 Instance Profile（設好 IAM Role 後刪掉 access key 環境變數即自動切換）
      *
-     * 生產環境只需要在 K8s ServiceAccount 上掛 IAM Role (IRSA)，
-     * 完全不需要在程式碼或 Secret 裡放任何 key。
+     * Region Provider Chain：
+     *   - AWS_REGION 有設定 → 使用設定值
+     *   - 未設定 → SDK 自動從 EC2 Instance Metadata 取得（Instance Profile 模式）
      */
-    this.s3Client = new S3Client({ region: this.region });
+    this.s3Client = new S3Client(
+      this.configRegion ? { region: this.configRegion } : {},
+    );
+  }
+
+  /** 取得實際使用的 region（lazy resolve，供組裝 imageUrl 用） */
+  private async resolveRegion(): Promise<string> {
+    if (this.configRegion) return this.configRegion;
+    // 未明確設定時，從 SDK 的 region provider 取得（EC2 IMDS）
+    return this.s3Client.config.region();
   }
 
   /**
@@ -89,10 +97,11 @@ export class S3Service {
 
     // 組出最終公開讀取的 imageUrl
     // 優先用 CloudFront（CDN 加速、降低 S3 費用）
-    // 沒設定 CloudFront 就直接用 S3 URL
+    // 沒設定 CloudFront 就直接用 S3 URL（lazy resolve region）
+    const region = await this.resolveRegion();
     const imageUrl = this.cloudfrontDomain
       ? `https://${this.cloudfrontDomain}/${objectKey}`
-      : `https://${this.bucketName}.s3.${this.region}.amazonaws.com/${objectKey}`;
+      : `https://${this.bucketName}.s3.${region}.amazonaws.com/${objectKey}`;
 
     return { uploadUrl, imageUrl, expiresIn: PRESIGNED_URL_EXPIRY_SECONDS };
   }

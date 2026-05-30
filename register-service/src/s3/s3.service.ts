@@ -33,20 +33,20 @@ export class S3Service {
   private readonly region: string;
 
   constructor(private readonly configService: ConfigService) {
-    this.region = configService.get<string>('AWS_REGION', 'ap-northeast-1');
+    const configRegion = configService.get<string>('AWS_REGION') || undefined;
+    this.region = configRegion ?? '';
     this.bucketName = configService.get<string>('AWS_S3_BUCKET_NAME', '');
 
     /**
-     * 不使用固定的 access key（避免 secret 外洩風險）。
-     * AWS SDK 的 Credential Provider Chain 會依序嘗試：
-     *   1. 環境變數 AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY（本地開發用）
-     *   2. ~/.aws/credentials（本地 CLI profile）
-     *   3. EC2 Instance Profile（生產環境用，讓 SDK 自動換取臨時憑證）
+     * AWS SDK Credential Provider Chain（兩種模式自動切換）：
+     *   1. 環境變數 AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY → IAM User Access Key 模式
+     *   2. EC2 Instance Profile（設好後刪掉 access key 環境變數即自動切換）
      *
-     * 生產環境只需要在 EC2 Instance Profile 上掛 IAM Role，
-     * 完全不需要在程式碼或環境變數裡放任何 key。
+     * Region Provider Chain：
+     *   - AWS_REGION 有設定 → 使用設定值
+     *   - 未設定 → SDK 自動從 EC2 Instance Metadata 取得（Instance Profile 模式）
      */
-    this.s3Client = new S3Client({ region: this.region });
+    this.s3Client = new S3Client(configRegion ? { region: configRegion } : {});
   }
 
   /**
