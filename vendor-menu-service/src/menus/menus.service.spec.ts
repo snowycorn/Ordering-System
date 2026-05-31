@@ -65,10 +65,24 @@ describe('MenusService', () => {
   });
 
   describe('findAllByVendor', () => {
-    it('should return all menus for a vendor', async () => {
+    it('should return all menus for a vendor with effectiveDailyLimit', async () => {
       mockPrismaService.menu.findMany.mockResolvedValue([]);
       await service.findAllByVendor('vendor-1');
-      expect(prisma.menu.findMany).toHaveBeenCalledWith({ where: { vendorId: 'vendor-1' } });
+      expect(prisma.menu.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { vendorId: 'vendor-1' } }),
+      );
+    });
+
+    it('should use today-effective quota for effectiveDailyLimit, else fall back to dailyLimit', async () => {
+      mockPrismaService.menu.findMany.mockResolvedValue([
+        { id: 'm1', dailyLimit: 50, dailyQuotas: [{ maxQuantity: 80 }] },
+        { id: 'm2', dailyLimit: 20, dailyQuotas: [] },
+      ]);
+      const result = await service.findAllByVendor('vendor-1');
+      expect(result[0].effectiveDailyLimit).toBe(80);
+      expect(result[1].effectiveDailyLimit).toBe(20);
+      // dailyQuotas 不外露於壓平後的物件
+      expect((result[0] as Record<string, unknown>).dailyQuotas).toBeUndefined();
     });
   });
 

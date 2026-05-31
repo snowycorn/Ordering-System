@@ -83,9 +83,24 @@ export class MenusService {
   }
 
   async findAllByVendor(vendorId: string) {
-    return this.prisma.menu.findMany({
+    const today = new Date(this.todayStr());
+    const menus = await this.prisma.menu.findMany({
       where: { vendorId },
+      include: {
+        // 帶出「今天生效」的 quota（targetDate <= today 的最新一筆），用來算 effectiveDailyLimit
+        dailyQuotas: {
+          where: { targetDate: { lte: today } },
+          orderBy: { targetDate: 'desc' },
+          take: 1,
+        },
+      },
     });
+
+    // 壓平：effectiveDailyLimit = 今天生效的 quota，否則回退 dailyLimit
+    return menus.map(({ dailyQuotas, ...menu }) => ({
+      ...menu,
+      effectiveDailyLimit: dailyQuotas[0]?.maxQuantity ?? menu.dailyLimit,
+    }));
   }
 
   async update(vendorId: string, menuId: string, updateMenuDto: UpdateMenuDto) {
@@ -222,12 +237,13 @@ export class MenusService {
    * 越權防護：menuId + vendorId 雙重驗證。
    */
   async findOneByVendor(vendorId: string, menuId: string) {
+    const today = new Date(this.todayStr());
     const menu = await this.prisma.menu.findFirst({
       where: { id: menuId, vendorId },
       include: {
         // 回傳今天（含）以後的配額設定，讓商家管理頁可以一眼看到未來排程
         dailyQuotas: {
-          where: { targetDate: { gte: new Date(new Date().toISOString().split('T')[0]) } },
+          where: { targetDate: { gte: today } },
           orderBy: { targetDate: 'asc' },
         },
       },
@@ -236,7 +252,12 @@ export class MenusService {
     if (!menu) {
       throw new NotFoundException(`找不到這筆菜單或你沒有權限存取`);
     }
-    return menu;
+
+    // effectiveDailyLimit：今天生效的有效上限（可能來自過去日期、仍在生效中的 quota）
+    return {
+      ...menu,
+      effectiveDailyLimit: await this.effectiveLimit(menuId, menu.dailyLimit, this.todayStr()),
+    };
   }
 
   /**
