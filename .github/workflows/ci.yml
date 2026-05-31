@@ -104,6 +104,7 @@ jobs:
             AWS_S3_BUCKET_NAME_REGISTER=${{ secrets.AWS_S3_BUCKET_NAME_REGISTER }}
             IAM_SERVICE_URL=http://${{ secrets.EC2_A_PRIVATE_IP }}:3001
             VENDOR_MENU_SERVICE_URL=http://localhost:3007
+            ORDER_INVENTORY_URL=http://${{ secrets.EC2_C_PRIVATE_IP }}:8081
             INTERNAL_ADMIN_EMAIL=admin1@test.com
             INTERNAL_ADMIN_PASSWORD=${{ secrets.INTERNAL_ADMIN_PASSWORD }}
             ENVEOF
@@ -150,6 +151,7 @@ jobs:
             DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@${RDS_HOST}:5432/vendor_menu_db?sslmode=require
             AWS_REGION=${AWS_REGION}
             AWS_S3_BUCKET_NAME=${AWS_S3_BUCKET_NAME_MENU}
+            ORDER_INVENTORY_SERVICE_URL=${ORDER_INVENTORY_URL}
             $([ -n "${AWS_ACCESS_KEY_ID:-}" ] && echo "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}")
             $([ -n "${AWS_SECRET_ACCESS_KEY:-}" ] && echo "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}")
             EOF
