@@ -123,8 +123,9 @@ describe('MenusService', () => {
       const futureDateStr = '2099-12-31';
       const dto: SetDailyQuotaDto = { targetDate: futureDateStr, maxQuantity: 10 };
 
-      mockPrismaService.menu.findFirst.mockResolvedValue({ id: 'menu-1' });
+      mockPrismaService.menu.findFirst.mockResolvedValue({ id: 'menu-1', isActive: true, dailyLimit: 0 });
       mockPrismaService.dailyQuota.upsert.mockResolvedValue({ id: 'quota-1' });
+      mockPrismaService.dailyQuota.findFirst.mockResolvedValue(null);
 
       await service.setDailyQuota('vendor-1', 'menu-1', dto);
       

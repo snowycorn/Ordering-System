@@ -53,6 +53,21 @@ export class MenusService {
     }
   }
 
+  /** 把視窗內（今天 D0..D+6）整段重推給 order-inventory（依菜單目前有效上限）。 */
+  private async pushBookingWindow(menuId: string, dailyLimit: number): Promise<void> {
+    const today = this.todayStr();
+    await this.pushInventoryRange(menuId, dailyLimit, today, this.addDays(today, BOOKING_WINDOW_DAYS - 1));
+  }
+
+  /** 把視窗內（今天 D0..D+6）的庫存全部歸零（菜單下架時呼叫，強制 order-inventory 額度歸零）。 */
+  private async zeroBookingWindow(menuId: string): Promise<void> {
+    const today = this.todayStr();
+    const end = this.addDays(today, BOOKING_WINDOW_DAYS - 1);
+    for (let dateStr = today; dateStr <= end; dateStr = this.addDays(dateStr, 1)) {
+      await this.orderInventory.setInventory(menuId, dateStr, 0);
+    }
+  }
+
   async create(vendorId: string, createMenuDto: CreateMenuDto) {
     const menu = await this.prisma.menu.create({
       data: {
@@ -62,13 +77,7 @@ export class MenusService {
     });
 
     // 種未來 7 天（D0..D+6）的庫存到 order-inventory，讓員工可立即下單
-    const today = this.todayStr();
-    await this.pushInventoryRange(
-      menu.id,
-      menu.dailyLimit,
-      today,
-      this.addDays(today, BOOKING_WINDOW_DAYS - 1),
-    );
+    await this.pushBookingWindow(menu.id, menu.dailyLimit);
 
     return menu;
   }
@@ -89,10 +98,19 @@ export class MenusService {
       throw new NotFoundException(`找不到這筆菜單或你沒有權限修改`);
     }
 
-    return this.prisma.menu.update({
+    const updated = await this.prisma.menu.update({
       where: { id: menuId },
       data: updateMenuDto,
     });
+
+    // 同步 order-inventory：下架（true→false）歸零視窗；重新上架（false→true）重推視窗
+    if (menu.isActive && !updated.isActive) {
+      await this.zeroBookingWindow(menuId);
+    } else if (!menu.isActive && updated.isActive) {
+      await this.pushBookingWindow(menuId, updated.dailyLimit);
+    }
+
+    return updated;
   }
 
   async remove(vendorId: string, menuId: string) {
@@ -105,10 +123,15 @@ export class MenusService {
     }
 
     // 軟刪除：標記為下架，避免破壞歷史訂單關聯
-    return this.prisma.menu.update({
+    const removed = await this.prisma.menu.update({
       where: { id: menuId },
       data: { isActive: false },
     });
+
+    // 強制把 order-inventory 視窗內（今天 D0..D+6）額度歸零，避免下架後仍可被下單
+    await this.zeroBookingWindow(menuId);
+
+    return removed;
   }
 
   async setDailyQuota(vendorId: string, menuId: string, dto: SetDailyQuotaDto) {
@@ -124,6 +147,11 @@ export class MenusService {
 
     if (!menu) {
       throw new NotFoundException(`找不到這筆菜單或你沒有權限修改限量`);
+    }
+
+    // 下架的菜單不可設定配額（其視窗庫存已歸零）
+    if (!menu.isActive) {
+      throw new BadRequestException('菜單已下架，無法設定配額');
     }
 
     const targetDate = new Date(dto.targetDate);
