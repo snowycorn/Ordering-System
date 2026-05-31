@@ -52,12 +52,21 @@ describe('MenusController (e2e)', () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/vendors/me/menus')
         .set('x-user-id', String(vendorAUserId))
-        .send({ name: 'Menu A', price: 100, dailyLimit: 50 })
+        .send({ name: 'Menu A', price: 100, dailyLimit: 50, tags: ['BEEF', 'SPICY'] })
         .expect(201);
-      
+
       expect(res.body.id).toBeDefined();
       expect(res.body.vendorId).toBe(vendorAId);
+      expect(res.body.tags).toEqual(['BEEF', 'SPICY']);
       menuAId = res.body.id;
+    });
+
+    it('POST /api/v1/vendors/me/menus - 拒絕非法 tag (400)', async () => {
+      await request(app.getHttpServer())
+        .post('/api/v1/vendors/me/menus')
+        .set('x-user-id', String(vendorAUserId))
+        .send({ name: 'Bad Tag Menu', price: 80, tags: ['NOT_A_REAL_TAG'] })
+        .expect(400);
     });
 
     it('GET /api/v1/vendors/me/menus - 查詢自己的菜單', async () => {
@@ -133,9 +142,42 @@ describe('MenusController (e2e)', () => {
       const res = await request(app.getHttpServer())
         .get('/api/v1/menus')
         .expect(200);
-      
+
       const found = res.body.find((m: any) => m.id === menuAId);
       expect(found).toBeDefined();
+      expect(found.tags).toEqual(['BEEF', 'SPICY']);
+    });
+
+    it('GET /api/v1/menus/tags - 回傳 13 個 tag 選項 (code + label)', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/menus/tags')
+        .expect(200);
+
+      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body).toHaveLength(13);
+      expect(res.body).toContainEqual({ code: 'BEEF', label: '牛' });
+      res.body.forEach((t: any) => {
+        expect(typeof t.code).toBe('string');
+        expect(typeof t.label).toBe('string');
+      });
+    });
+
+    it('GET /api/v1/menus?tags=BEEF - 命中含該 tag 的 Menu A', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/menus?tags=BEEF')
+        .expect(200);
+
+      const found = res.body.find((m: any) => m.id === menuAId);
+      expect(found).toBeDefined();
+    });
+
+    it('GET /api/v1/menus?tags=BEEF&tags=MILD - AND 語意：Menu A 不含 MILD 故被排除', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/menus?tags=BEEF&tags=MILD')
+        .expect(200);
+
+      const found = res.body.find((m: any) => m.id === menuAId);
+      expect(found).toBeUndefined();
     });
 
     it('DELETE /api/v1/vendors/me/menus/:menuId - 軟刪除 (Vendor A)', async () => {
