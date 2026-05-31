@@ -1,4 +1,5 @@
-import { IsString, IsNumber, IsOptional, IsUrl, IsBoolean, IsInt, Min } from 'class-validator';
+import { IsString, IsNumber, IsOptional, IsUrl, IsBoolean, IsInt, Min, IsArray, IsIn } from 'class-validator';
+import { MENU_TAG_CODES, MenuTagCode } from '../menu-tags.constant';
 
 export class UpdateMenuDto {
   @IsOptional()
@@ -21,4 +22,9 @@ export class UpdateMenuDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @IsIn(MENU_TAG_CODES, { each: true })
+  tags?: MenuTagCode[]; // 菜單標籤（可複選，限定 MENU_TAG_CODES）
 }

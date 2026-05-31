@@ -204,11 +204,13 @@ export class MenusService {
    * 支援依 vendorId 和 isActive 過濾。
    * 回傳資料包含 vendor 基本資料，讓 Recommendation Service 不需要再打一次 vendors API。
    */
-  async findAllPublic(vendorId?: string, isActive: boolean = true) {
+  async findAllPublic(vendorId?: string, isActive: boolean = true, tags?: string[]) {
     return this.prisma.menu.findMany({
       where: {
         isActive,
         ...(vendorId ? { vendorId } : {}),
+        // AND 語意：菜單須同時包含所有指定 tag
+        ...(tags?.length ? { tags: { hasEvery: tags } } : {}),
       },
       select: {
         id: true,
@@ -216,6 +218,7 @@ export class MenusService {
         price: true,
         imageUrl: true,
         dailyLimit: true,
+        tags: true,
         isActive: true,
         vendorId: true,
         // 附帶商家基本資訊，避免 Recommendation Service 再打一次 API
@@ -274,6 +277,7 @@ export class MenusService {
         price: true,
         imageUrl: true,
         dailyLimit: true,
+        tags: true,
         isActive: true,
         vendorId: true,
         vendor: {

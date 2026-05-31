@@ -15,7 +15,8 @@
 vendor-menu-service
 ├── /api/v1/vendors              # 公開商家列表（員工查詢用）
 ├── /api/v1/vendors/:id/menus    # 公開菜單查詢，含當日配額（員工查詢用）
-├── /api/v1/menus                # 全量菜單查詢（Recommendation Service 內部用）
+├── /api/v1/menus                # 全量菜單查詢、tag 篩選（Recommendation Service 內部用）
+├── /api/v1/menus/tags           # 菜單標籤選項清單（tag 詞彙單一真實來源）
 ├── /api/v1/vendors/me           # 商家自身資料管理（需 x-user-id header）
 ├── /api/v1/vendors/:id          # 管理員用商家查詢與修改
 ├── /api/v1/vendors/me/menus     # 商家菜單 CRUD 與每日限量管理
@@ -27,7 +28,7 @@ vendor-menu-service
 | Table | 說明 |
 |---|---|
 | `vendors` | 商家基本資料（名稱、類別、服務廠區、狀態） |
-| `menus` | 菜單項目（名稱、價格、圖片、預設每日限量） |
+| `menus` | 菜單項目（名稱、價格、圖片、預設每日限量、標籤 `tags`） |
 | `daily_quotas` | 指定日期的限量覆蓋設定 |
 
 ---
@@ -126,7 +127,8 @@ docker-compose down -v
 |---|---|---|---|
 | `GET` | `/api/v1/vendors` | `factoryZone` (選填) | 查詢所有上架商家 |
 | `GET` | `/api/v1/vendors/:id/menus` | `date` YYYY-MM-DD (選填，預設今天) | 查詢指定商家菜單及當日配額 |
-| `GET` | `/api/v1/menus` | `vendorId` (選填)、`isActive` (選填，預設 true) | 全量菜單，供 Recommendation Service |
+| `GET` | `/api/v1/menus` | `vendorId` (選填)、`isActive` (選填，預設 true)、`tags` (選填，可多值) | 全量菜單，供 Recommendation Service；`tags` 為 AND 篩選 |
+| `GET` | `/api/v1/menus/tags` | — | 所有合法 tag 選項（`code` 英文 + `label` 中文），tag 詞彙單一真實來源 |
 | `GET` | `/api/v1/menus/:menuId` | — | 查詢單一菜單詳情（含商家資訊，下架回 404） |
 
 #### 商家自管（需 `x-user-id` Header）
@@ -137,8 +139,8 @@ docker-compose down -v
 | `PUT` | `/api/v1/vendors/me` | 更新自己的商家資料（name / category / description / factoryZone / status） |
 | `GET` | `/api/v1/vendors/me/menus` | 查詢自己所有菜單（含下架） |
 | `GET` | `/api/v1/vendors/me/menus/:menuId` | 查詢單一菜單詳情（含今日起的 DailyQuota 排程，越權回 404） |
-| `POST` | `/api/v1/vendors/me/menus` | 新增菜單項目 |
-| `PUT` | `/api/v1/vendors/me/menus/:menuId` | 更新菜單項目（name / price / imageUrl / dailyLimit / isActive） |
+| `POST` | `/api/v1/vendors/me/menus` | 新增菜單項目（含 `tags` 標籤，可複選） |
+| `PUT` | `/api/v1/vendors/me/menus/:menuId` | 更新菜單項目（name / price / imageUrl / dailyLimit / isActive / tags） |
 | `DELETE` | `/api/v1/vendors/me/menus/:menuId` | 下架菜單（軟刪除，`isActive = false`） |
 | `PUT` | `/api/v1/vendors/me/menus/:menuId/quotas` | Upsert 指定日期的每日限量 |
 | `GET` | `/api/v1/vendors/me/menus/upload-image-url` | 取得 S3 Pre-signed PUT URL（`?contentType=image/jpeg`，限速 10 req/min） |
@@ -170,6 +172,28 @@ docker-compose down -v
 4. 前端將 `imageUrl` 帶入建立/更新菜單的 API（`POST /menus` 或 `PUT /menus/:menuId`）
 
 > **優勢**：圖片流量不經過 NestJS Container，節省頻寬與記憶體；搭配 CloudFront CDN 加速讀取；透過 IAM IRSA 控管權限，無需在程式碼中配置 Secret Key。
+
+### 菜單標籤 (Tags)
+
+菜單可標註多個標籤（複選），由商家自行維護，供 **Recommendation Service** 做分類與篩選。
+
+**儲存方式**：DB 以英文 code 陣列（PostgreSQL `text[]`）儲存，中文僅作為對照。詞彙範圍定義於 [`src/menus/menu-tags.constant.ts`](src/menus/menu-tags.constant.ts)，並透過 `GET /api/v1/menus/tags` 對外暴露。
+
+> 不使用 Prisma enum 的原因：enum 識別字不能用中文；若用英文 enum 又得逐值 `@map` 且查詢回傳拉丁名。改用 `text[]` 存英文 code + 應用層 `class-validator` `@IsIn` 驗證，兼顧中文對照與日後擴充。
+
+**合法值（13 種，`code` ↔ `label`）**：
+
+| code | label | code | label | code | label |
+|---|---|---|---|---|---|
+| `VEGETARIAN` | 素 | `BEEF` | 牛 | `ITALIAN` | 義式 |
+| `CHICKEN` | 雞 | `LAMB` | 羊 | `SOUTHEAST_ASIAN` | 東南亞 |
+| `PORK` | 豬 | `CHINESE` | 中式 | `AMERICAN` | 美式 |
+| `BUDGET` | 便宜 | `JAPANESE` | 日式 | `SPICY` | 辣 |
+| `MILD` | 不辣 | | | | |
+
+**篩選查詢**：`GET /api/v1/menus?tags=BEEF&tags=SPICY` 為 **AND 語意**（菜單須同時包含所有指定 tag，底層使用 Prisma `hasEvery`）。
+
+**跨服務同步約定**：vendor-menu 為 tag 詞彙的唯一擁有者。Recommendation Service **不應自行 hardcode** 這份清單，而是呼叫 `GET /api/v1/menus/tags` 取得 `code ↔ label` 對照（建議啟動時拉取並快取）。菜單資料（`/api/v1/menus`、`/api/v1/menus/:menuId`）回傳的 `tags` 為英文 code，由 Recommendation 端用對照表還原中文。如此新增 / 調整 tag 時只需改本服務並部署，下游自動同步、不會漂移。
 
 ---
 

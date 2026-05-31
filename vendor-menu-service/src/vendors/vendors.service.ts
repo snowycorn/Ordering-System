@@ -157,6 +157,7 @@ export class VendorsService {
       price: menu.price,
       imageUrl: menu.imageUrl,
       dailyLimit: menu.dailyLimit,          // 預設限量
+      tags: menu.tags,                      // 菜單標籤（英文 code）
       todayMaxQuantity: menu.dailyQuotas[0]?.maxQuantity ?? null, // 該日生效的 override
       date: targetDateStr,
       isActive: menu.isActive,

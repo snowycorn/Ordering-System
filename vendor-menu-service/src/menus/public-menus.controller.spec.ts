@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { PublicMenusController } from './public-menus.controller';
 import { MenusService } from './menus.service';
 import { ListPublicMenusQueryDto } from './dto/list-public-menus-query.dto';
+import { MENU_TAGS } from './menu-tags.constant';
 
 describe('PublicMenusController', () => {
   let controller: PublicMenusController;
@@ -35,13 +36,25 @@ describe('PublicMenusController', () => {
     it('should call menusService.findAllPublic with correct query params', async () => {
       const query: ListPublicMenusQueryDto = { vendorId: 'vendor-1', isActive: false };
       await controller.findAll(query);
-      expect(service.findAllPublic).toHaveBeenCalledWith('vendor-1', false);
+      expect(service.findAllPublic).toHaveBeenCalledWith('vendor-1', false, undefined);
     });
 
     it('should default isActive to true', async () => {
       const query: ListPublicMenusQueryDto = { vendorId: 'vendor-1' };
       await controller.findAll(query);
-      expect(service.findAllPublic).toHaveBeenCalledWith('vendor-1', true);
+      expect(service.findAllPublic).toHaveBeenCalledWith('vendor-1', true, undefined);
+    });
+
+    it('should pass tags filter through to findAllPublic', async () => {
+      const query: ListPublicMenusQueryDto = { vendorId: 'vendor-1', tags: ['BEEF', 'SPICY'] };
+      await controller.findAll(query);
+      expect(service.findAllPublic).toHaveBeenCalledWith('vendor-1', true, ['BEEF', 'SPICY']);
+    });
+  });
+
+  describe('getTags', () => {
+    it('should return the full MENU_TAGS option list', () => {
+      expect(controller.getTags()).toBe(MENU_TAGS);
     });
   });
 
