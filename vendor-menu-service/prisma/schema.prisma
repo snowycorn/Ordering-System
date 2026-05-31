@@ -31,7 +31,7 @@ model Menu {
   name        String   @db.VarChar(255)
   price       Decimal  @db.Decimal(10, 2)
   imageUrl    String?  @map("image_url") @db.Text
-  dailyLimit  Int?     @map("daily_limit")        // 預設每日限量（null 表示不限）
+  dailyLimit  Int      @default(0) @map("daily_limit") // 預設每日限量（0 表示當日無庫存，需設 quota 開量）
   isActive    Boolean  @default(true) @map("is_active")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
@@ -43,7 +43,9 @@ model Menu {
   @@index([vendorId])
 }
 
-// 每日特定限量覆蓋表（override dailyLimit for a specific date）
+// 每日限量覆蓋表（override dailyLimit from targetDate onward）
+// 一筆 quota 的 targetDate=T 代表「從 T 當天起、之後所有日期」皆套用此 maxQuantity，
+// 直到出現另一筆 targetDate 更晚的 quota 才被接續覆蓋。
 model DailyQuota {
   id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   menuId      String   @map("menu_id") @db.Uuid

@@ -23,4 +23,11 @@ export const envValidationSchema = Joi.object({
   // CloudFront Domain（選填）：設定後 imageUrl 會走 CDN，否則走 S3 直連
   // 範例：d1234abcd.cloudfront.net
   AWS_CLOUDFRONT_DOMAIN: Joi.string().optional(),
+
+  // Order-Inventory 服務位址（必填）：建立菜單與每日 cron 用來推送每日庫存
+  // 範例：http://<host>:8081
+  ORDER_INVENTORY_SERVICE_URL: Joi.string().required(),
+
+  // 直連 order-inventory 時帶的 X-User-Id（純粹滿足 int 解析；role 固定送 admin）
+  INTERNAL_ADMIN_USER_ID: Joi.number().default(0),
 });

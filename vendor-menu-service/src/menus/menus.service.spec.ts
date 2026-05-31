@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { MenusService } from './menus.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { OrderInventoryClient } from '../integrations/order-inventory.client';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { CreateMenuDto } from './dto/create-menu.dto';
 import { UpdateMenuDto } from './dto/update-menu.dto';
@@ -19,7 +20,12 @@ describe('MenusService', () => {
     },
     dailyQuota: {
       upsert: jest.fn(),
+      findFirst: jest.fn(),
     },
+  };
+
+  const mockOrderInventory = {
+    setInventory: jest.fn().mockResolvedValue(undefined),
   };
 
   beforeEach(async () => {
@@ -29,6 +35,10 @@ describe('MenusService', () => {
         {
           provide: PrismaService,
           useValue: mockPrismaService,
+        },
+        {
+          provide: OrderInventoryClient,
+          useValue: mockOrderInventory,
         },
       ],
     }).compile();

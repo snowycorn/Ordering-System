@@ -123,9 +123,11 @@ export class VendorsService {
    *
    * 回傳每道菜的：
    * - 基本資訊（名稱、價格、圖片）
-   * - dailyLimit：菜單預設每日限量（null = 不限）
-   * - todayMaxQuantity：當日 DailyQuota override 的最大數量（null = 使用 dailyLimit）
+   * - dailyLimit：菜單預設每日限量
+   * - todayMaxQuantity：當日生效的 DailyQuota 上限（null = 使用 dailyLimit）
    *
+   * DailyQuota 語意：一筆 targetDate=T 代表「T 當天起、之後所有日期」皆套用該 maxQuantity，
+   * 故這裡取 targetDate <= date 中最新的一筆，而非精確日期比對。
    * 注意：實際剩餘庫存由 Order Service 的 Redis 管理，這裡只回傳「上限」資訊。
    */
   async findVendorMenus(vendorId: string, dateString?: string) {
@@ -138,9 +140,10 @@ export class VendorsService {
     const menus = await this.prisma.menu.findMany({
       where: { vendorId, isActive: true },
       include: {
-        // 一次撈出當日的 DailyQuota，避免 N+1
+        // 撈出「該日生效」的 DailyQuota（targetDate <= 該日的最新一筆），避免 N+1
         dailyQuotas: {
-          where: { targetDate },
+          where: { targetDate: { lte: targetDate } },
+          orderBy: { targetDate: 'desc' },
           take: 1,
         },
       },
@@ -153,8 +156,8 @@ export class VendorsService {
       name: menu.name,
       price: menu.price,
       imageUrl: menu.imageUrl,
-      dailyLimit: menu.dailyLimit,          // 預設限量（null = 不限）
-      todayMaxQuantity: menu.dailyQuotas[0]?.maxQuantity ?? null, // 當日 override
+      dailyLimit: menu.dailyLimit,          // 預設限量
+      todayMaxQuantity: menu.dailyQuotas[0]?.maxQuantity ?? null, // 該日生效的 override
       date: targetDateStr,
       isActive: menu.isActive,
     }));

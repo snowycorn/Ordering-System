@@ -14,5 +14,5 @@ export class CreateMenuDto {
   @IsOptional()
   @IsInt()
   @Min(0)
-  dailyLimit?: number; // null 表示不限量
+  dailyLimit?: number; // 預設每日限量；未帶時於 service 補 0
 }

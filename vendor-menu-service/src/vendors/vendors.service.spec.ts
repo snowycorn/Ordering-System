@@ -223,7 +223,8 @@ describe('VendorsService', () => {
         where: { vendorId: 'uuid-1', isActive: true },
         include: {
           dailyQuotas: {
-            where: { targetDate: new Date(mockDate) },
+            where: { targetDate: { lte: new Date(mockDate) } },
+            orderBy: { targetDate: 'desc' },
             take: 1,
           },
         },
@@ -263,8 +264,8 @@ describe('VendorsService', () => {
 
       expect(prisma.menu.findMany).toHaveBeenCalled();
       const callArgs = mockPrismaService.menu.findMany.mock.calls[0][0];
-      // verify it uses some valid date object for targetDate
-      expect(callArgs.include.dailyQuotas.where.targetDate).toBeInstanceOf(Date);
+      // verify it uses some valid date object for targetDate (lte filter)
+      expect(callArgs.include.dailyQuotas.where.targetDate.lte).toBeInstanceOf(Date);
     });
   });
 });

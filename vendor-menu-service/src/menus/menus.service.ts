@@ -1,20 +1,76 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { OrderInventoryClient } from '../integrations/order-inventory.client';
 import { CreateMenuDto } from './dto/create-menu.dto';
 import { UpdateMenuDto } from './dto/update-menu.dto';
 import { SetDailyQuotaDto } from './dto/set-daily-quota.dto';
 
+// 訂單可預訂的滾動視窗天數：今天(D0) 起算共 7 天，最遠到 D+6
+const BOOKING_WINDOW_DAYS = 7;
+
 @Injectable()
 export class MenusService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly orderInventory: OrderInventoryClient,
+  ) {}
+
+  /** Asia/Taipei 今天的 YYYY-MM-DD 字串。 */
+  private todayStr(): string {
+    return new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Taipei' }).split(' ')[0];
+  }
+
+  /** 以 baseStr(YYYY-MM-DD) 為基準加 n 天，回傳 YYYY-MM-DD（錨定 UTC 午夜，僅加整日，無 DST 疑慮）。 */
+  private addDays(baseStr: string, n: number): string {
+    const d = new Date(`${baseStr}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().split('T')[0];
+  }
+
+  /**
+   * 計算某菜單某日的「有效每日上限」。
+   * 規則：取 targetDate <= date 中 targetDate 最大的那筆 DailyQuota.maxQuantity；
+   * 若無任何符合的 quota，回退 menu 的 dailyLimit。
+   */
+  private async effectiveLimit(menuId: string, dailyLimit: number, dateStr: string): Promise<number> {
+    const quota = await this.prisma.dailyQuota.findFirst({
+      where: { menuId, targetDate: { lte: new Date(dateStr) } },
+      orderBy: { targetDate: 'desc' },
+    });
+    return quota?.maxQuantity ?? dailyLimit;
+  }
+
+  /** 推送 [fromStr .. toStr]（含）每一天的有效上限給 order-inventory。 */
+  private async pushInventoryRange(
+    menuId: string,
+    dailyLimit: number,
+    fromStr: string,
+    toStr: string,
+  ): Promise<void> {
+    for (let dateStr = fromStr; dateStr <= toStr; dateStr = this.addDays(dateStr, 1)) {
+      const limit = await this.effectiveLimit(menuId, dailyLimit, dateStr);
+      await this.orderInventory.setInventory(menuId, dateStr, limit);
+    }
+  }
 
   async create(vendorId: string, createMenuDto: CreateMenuDto) {
-    return this.prisma.menu.create({
+    const menu = await this.prisma.menu.create({
       data: {
         vendorId,
         ...createMenuDto,
       },
     });
+
+    // 種未來 7 天（D0..D+6）的庫存到 order-inventory，讓員工可立即下單
+    const today = this.todayStr();
+    await this.pushInventoryRange(
+      menu.id,
+      menu.dailyLimit,
+      today,
+      this.addDays(today, BOOKING_WINDOW_DAYS - 1),
+    );
+
+    return menu;
   }
 
   async findAllByVendor(vendorId: string) {
@@ -57,7 +113,7 @@ export class MenusService {
 
   async setDailyQuota(vendorId: string, menuId: string, dto: SetDailyQuotaDto) {
     // 阻擋設定過去日期
-    const today = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Taipei' }).split(' ')[0];
+    const today = this.todayStr();
     if (dto.targetDate < today) {
       throw new BadRequestException('不能設定過去日期的限量配額');
     }
@@ -73,7 +129,7 @@ export class MenusService {
     const targetDate = new Date(dto.targetDate);
 
     // 使用 upsert，如果當天已經設過上限就更新，沒有就新增
-    return this.prisma.dailyQuota.upsert({
+    const quota = await this.prisma.dailyQuota.upsert({
       where: {
         menuId_targetDate: {
           menuId,
@@ -89,6 +145,16 @@ export class MenusService {
         maxQuantity: dto.maxQuantity,
       },
     });
+
+    // quota 影響「targetDate 當天起、之後所有日期」的有效上限，
+    // 即時重推視窗內受影響的日期（從 targetDate 或今天起，到 D+6 邊界）。
+    const windowEnd = this.addDays(today, BOOKING_WINDOW_DAYS - 1);
+    const repushFrom = dto.targetDate > today ? dto.targetDate : today;
+    if (repushFrom <= windowEnd) {
+      await this.pushInventoryRange(menuId, menu.dailyLimit, repushFrom, windowEnd);
+    }
+
+    return quota;
   }
   /**
    * 公開全量菜單查詢（供 Recommendation Service 使用）。

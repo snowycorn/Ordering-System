@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD, Reflector } from '@nestjs/core';
 import { AppController } from './app.controller';
@@ -30,6 +31,8 @@ import { RolesGuard } from './common/guards/roles.guard';
         limit: 100,
       },
     ]),
+    // 排程模組：供每日庫存推進 cron 使用
+    ScheduleModule.forRoot(),
     PrismaModule,
     MenusModule,
     VendorsModule,
