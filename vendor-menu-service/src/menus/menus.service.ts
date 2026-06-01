@@ -241,15 +241,26 @@ export class MenusService {
 
   /**
    * 公開全量菜單查詢（供 Recommendation Service 使用）。
-   * 支援依 vendorId 和 isActive 過濾。
+   * 支援依 vendorId、isActive、tags 與 factoryZone 過濾。
    * 回傳資料包含 vendor 基本資料，讓 Recommendation Service 不需要再打一次 vendors API。
    */
-  async findAllPublic(vendorId?: string, isActive: boolean = true, tags?: string[]) {
+  async findAllPublic(
+    vendorId?: string,
+    isActive: boolean = true,
+    tags?: string[],
+    factoryZone?: string,
+  ) {
     return this.prisma.menu.findMany({
       where: {
         isActive,
-        // 隱藏停權商家的菜單（員工/推薦端皆看不到）
-        vendor: { is: { status: VENDOR_STATUS.ACTIVE } },
+        // 隱藏停權商家的菜單（員工/推薦端皆看不到）；
+        // 帶 factoryZone 時，僅保留服務該廠區（factoryZones 含此值）的商家。
+        vendor: {
+          is: {
+            status: VENDOR_STATUS.ACTIVE,
+            ...(factoryZone ? { factoryZones: { has: factoryZone } } : {}),
+          },
+        },
         ...(vendorId ? { vendorId } : {}),
         // AND 語意：菜單須同時包含所有指定 tag
         ...(tags?.length ? { tags: { hasEvery: tags } } : {}),

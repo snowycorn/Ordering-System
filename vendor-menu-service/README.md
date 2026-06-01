@@ -128,7 +128,7 @@ docker-compose down -v
 | `GET` | `/api/v1/vendors` | `factoryZone` (選填，單一廠區) | 查詢所有上架商家；帶 `factoryZone` 時只回服務該廠區的商家（`factoryZones` 陣列包含此值） |
 | `GET` | `/api/v1/vendors/factory-zones` | — | 取得合法廠區清單（全系統單一真實來源，供前端渲染選單） |
 | `GET` | `/api/v1/vendors/:id/menus` | `date` YYYY-MM-DD (選填，預設今天) | 查詢指定商家菜單及當日配額 |
-| `GET` | `/api/v1/menus` | `vendorId` (選填)、`isActive` (選填，預設 true)、`tags` (選填，可多值) | 全量菜單，供 Recommendation Service；`tags` 為 AND 篩選 |
+| `GET` | `/api/v1/menus` | `vendorId` (選填)、`isActive` (選填，預設 true)、`tags` (選填，可多值)、`factoryZone` (選填，單一廠區) | 全量菜單，供 Recommendation Service；`tags` 為 AND 篩選；`factoryZone` 只回服務該廠區（商家 `factoryZones` 含此值）的菜單 |
 | `GET` | `/api/v1/menus/tags` | — | 所有合法 tag 選項（`code` 英文 + `label` 中文），tag 詞彙單一真實來源 |
 | `GET` | `/api/v1/menus/:menuId` | — | 查詢單一菜單詳情（含商家資訊，下架回 404） |
 

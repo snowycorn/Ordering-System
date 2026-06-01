@@ -30,7 +30,7 @@ describe('MenusController (e2e)', () => {
 
     // Create 2 fake vendors for testing ownership logic
     const vendorA = await prisma.vendor.create({
-      data: { name: 'Vendor A', category: 'Testing', status: 'ACTIVE', userId: vendorAUserId }
+      data: { name: 'Vendor A', category: 'Testing', status: 'ACTIVE', userId: vendorAUserId, factoryZones: ['A廠'] }
     });
     vendorAId = vendorA.id;
 
@@ -174,6 +174,24 @@ describe('MenusController (e2e)', () => {
     it('GET /api/v1/menus?tags=BEEF&tags=MILD - AND 語意：Menu A 不含 MILD 故被排除', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/v1/menus?tags=BEEF&tags=MILD')
+        .expect(200);
+
+      const found = res.body.find((m: any) => m.id === menuAId);
+      expect(found).toBeUndefined();
+    });
+
+    it('GET /api/v1/menus?factoryZone=A廠 - Vendor A 服務 A廠，命中 Menu A', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/menus?factoryZone=A廠')
+        .expect(200);
+
+      const found = res.body.find((m: any) => m.id === menuAId);
+      expect(found).toBeDefined();
+    });
+
+    it('GET /api/v1/menus?factoryZone=B廠 - Vendor A 不服務 B廠，排除 Menu A', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/menus?factoryZone=B廠')
         .expect(200);
 
       const found = res.body.find((m: any) => m.id === menuAId);

@@ -1,5 +1,5 @@
 // src/menus/dto/list-public-menus-query.dto.ts
-import { IsOptional, IsUUID, IsBoolean, IsArray, IsIn } from 'class-validator';
+import { IsOptional, IsUUID, IsBoolean, IsArray, IsIn, IsString } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { MENU_TAG_CODES, MenuTagCode } from '../menu-tags.constant';
 
@@ -8,6 +8,13 @@ export class ListPublicMenusQueryDto {
   @IsOptional()
   @IsUUID()
   vendorId?: string;
+
+  // 依廠區過濾：只回「服務該廠區」商家的菜單（vendor.factoryZones 含此值）。
+  // 供 Recommendation Service 取得某員工廠區可訂的菜單。
+  // 維持單數（員工屬單一廠區）；不加 @IsIn，非法廠區只回空陣列不 400（同 ListVendorsQueryDto）。
+  @IsOptional()
+  @IsString()
+  factoryZone?: string;
 
   // 過濾啟用狀態（預設 true，Recommendation Service 只需要上架的菜單）
   @IsOptional()

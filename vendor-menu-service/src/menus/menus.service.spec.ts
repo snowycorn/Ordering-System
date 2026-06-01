@@ -176,6 +176,17 @@ describe('MenusService', () => {
         },
       }));
     });
+
+    it('should filter by factoryZone via vendor.factoryZones has', async () => {
+      mockPrismaService.menu.findMany.mockResolvedValue([]);
+      await service.findAllPublic(undefined, true, undefined, 'A廠');
+      expect(prisma.menu.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: {
+          isActive: true,
+          vendor: { is: { status: 'ACTIVE', factoryZones: { has: 'A廠' } } },
+        },
+      }));
+    });
   });
 
   describe('findOneByVendor', () => {
