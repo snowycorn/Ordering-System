@@ -200,7 +200,7 @@ describe('VendorsService', () => {
   describe('findVendorMenus', () => {
     it('should map todayMaxQuantity correctly when dailyQuotas exist', async () => {
       // Mock vendor existence
-      mockPrismaService.vendor.findUnique.mockResolvedValue({ id: 'uuid-1' });
+      mockPrismaService.vendor.findUnique.mockResolvedValue({ id: 'uuid-1', status: 'ACTIVE' });
 
       const mockDate = '2026-05-29';
       const menuWithQuota = {
@@ -237,7 +237,7 @@ describe('VendorsService', () => {
     });
 
     it('should map todayMaxQuantity to null when no dailyQuotas exist', async () => {
-      mockPrismaService.vendor.findUnique.mockResolvedValue({ id: 'uuid-1' });
+      mockPrismaService.vendor.findUnique.mockResolvedValue({ id: 'uuid-1', status: 'ACTIVE' });
 
       const mockDate = '2026-05-29';
       const menuWithoutQuota = {
@@ -257,7 +257,7 @@ describe('VendorsService', () => {
     });
 
     it('should use current date if dateString is not provided', async () => {
-      mockPrismaService.vendor.findUnique.mockResolvedValue({ id: 'uuid-1' });
+      mockPrismaService.vendor.findUnique.mockResolvedValue({ id: 'uuid-1', status: 'ACTIVE' });
       mockPrismaService.menu.findMany.mockResolvedValue([]);
 
       await service.findVendorMenus('uuid-1');
@@ -266,6 +266,68 @@ describe('VendorsService', () => {
       const callArgs = mockPrismaService.menu.findMany.mock.calls[0][0];
       // verify it uses some valid date object for targetDate (lte filter)
       expect(callArgs.include.dailyQuotas.where.targetDate.lte).toBeInstanceOf(Date);
+    });
+
+    it('should throw NotFoundException for a suspended vendor (hidden from public)', async () => {
+      mockPrismaService.vendor.findUnique.mockResolvedValue({ id: 'uuid-1', status: 'SUSPENDED' });
+
+      await expect(service.findVendorMenus('uuid-1')).rejects.toThrow(NotFoundException);
+      expect(prisma.menu.findMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('suspend', () => {
+    it('should set status SUSPENDED with audit fields', async () => {
+      mockPrismaService.vendor.findUnique.mockResolvedValue({ id: 'uuid-1', status: 'ACTIVE' });
+      mockPrismaService.vendor.update.mockResolvedValue({ id: 'uuid-1', status: 'SUSPENDED' });
+
+      await service.suspend('uuid-1', 7, '多次違規');
+
+      expect(prisma.vendor.update).toHaveBeenCalledWith({
+        where: { id: 'uuid-1' },
+        data: {
+          status: 'SUSPENDED',
+          suspendedAt: expect.any(Date),
+          suspendedBy: 7,
+          suspendReason: '多次違規',
+        },
+      });
+    });
+
+    it('should store null suspendedBy when admin userId is undefined', async () => {
+      mockPrismaService.vendor.findUnique.mockResolvedValue({ id: 'uuid-1', status: 'ACTIVE' });
+      mockPrismaService.vendor.update.mockResolvedValue({ id: 'uuid-1' });
+
+      await service.suspend('uuid-1', undefined, 'reason');
+
+      expect(prisma.vendor.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ suspendedBy: null }) }),
+      );
+    });
+
+    it('should throw NotFoundException if vendor does not exist', async () => {
+      mockPrismaService.vendor.findUnique.mockResolvedValue(null);
+      await expect(service.suspend('uuid-999', 1, 'x')).rejects.toThrow(NotFoundException);
+      expect(prisma.vendor.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('reactivate', () => {
+    it('should set status ACTIVE and clear audit fields', async () => {
+      mockPrismaService.vendor.findUnique.mockResolvedValue({ id: 'uuid-1', status: 'SUSPENDED' });
+      mockPrismaService.vendor.update.mockResolvedValue({ id: 'uuid-1', status: 'ACTIVE' });
+
+      await service.reactivate('uuid-1');
+
+      expect(prisma.vendor.update).toHaveBeenCalledWith({
+        where: { id: 'uuid-1' },
+        data: {
+          status: 'ACTIVE',
+          suspendedAt: null,
+          suspendedBy: null,
+          suspendReason: null,
+        },
+      });
     });
   });
 });

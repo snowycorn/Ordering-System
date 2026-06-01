@@ -4,12 +4,14 @@ import {
   Put,
   Body,
   Headers,
+  UseGuards,
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
 import { VendorsService } from '../vendors.service';
 import { UpdateVendorDto } from '../dto/update-vendor.dto';
 import { parseXUserId } from '../../common/parse-x-user-id';
+import { ActiveVendorGuard } from '../../common/guards/active-vendor.guard';
 
 /**
  * 商家自身管理端點（商家端後台）
@@ -35,6 +37,7 @@ export class MeVendorsController {
    * 商家更新自己的資料（名稱、描述、圖片等）。
    */
   @Put()
+  @UseGuards(ActiveVendorGuard)
   async updateMyProfile(
     @Headers('x-user-id') xUserId: string,
     @Body() updateVendorDto: UpdateVendorDto,

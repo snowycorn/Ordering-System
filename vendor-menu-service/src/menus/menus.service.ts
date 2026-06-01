@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { OrderInventoryClient } from '../integrations/order-inventory.client';
+import { VendorsService, VENDOR_STATUS } from '../vendors/vendors.service';
 import { CreateMenuDto } from './dto/create-menu.dto';
 import { UpdateMenuDto } from './dto/update-menu.dto';
 import { SetDailyQuotaDto } from './dto/set-daily-quota.dto';
@@ -13,6 +14,7 @@ export class MenusService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly orderInventory: OrderInventoryClient,
+    private readonly vendors: VendorsService,
   ) {}
 
   /** Asia/Taipei 今天的 YYYY-MM-DD 字串。 */
@@ -199,6 +201,44 @@ export class MenusService {
 
     return quota;
   }
+
+  /**
+   * 停權商家（管理員專用）：標記 vendor.status=SUSPENDED 並記錄稽核資訊，
+   * 再把該商家所有 active 菜單在 order-inventory 的視窗庫存歸零（補償動作）。
+   * 不改 menu.isActive；公開查詢已依 vendor.status 過濾。
+   */
+  async suspendVendor(vendorId: string, suspendedBy: number | undefined, reason: string) {
+    const vendor = await this.vendors.suspend(vendorId, suspendedBy, reason);
+
+    const menus = await this.prisma.menu.findMany({
+      where: { vendorId, isActive: true },
+      select: { id: true },
+    });
+    for (const menu of menus) {
+      await this.zeroBookingWindow(menu.id);
+    }
+
+    return vendor;
+  }
+
+  /**
+   * 復權商家（管理員專用）：還原 vendor.status=ACTIVE、清空稽核欄位，
+   * 再把所有 active 菜單的視窗庫存依目前有效上限重推回 order-inventory。
+   */
+  async reactivateVendor(vendorId: string) {
+    const vendor = await this.vendors.reactivate(vendorId);
+
+    const menus = await this.prisma.menu.findMany({
+      where: { vendorId, isActive: true },
+      select: { id: true, dailyLimit: true },
+    });
+    for (const menu of menus) {
+      await this.pushBookingWindow(menu.id, menu.dailyLimit);
+    }
+
+    return vendor;
+  }
+
   /**
    * 公開全量菜單查詢（供 Recommendation Service 使用）。
    * 支援依 vendorId 和 isActive 過濾。
@@ -208,6 +248,8 @@ export class MenusService {
     return this.prisma.menu.findMany({
       where: {
         isActive,
+        // 隱藏停權商家的菜單（員工/推薦端皆看不到）
+        vendor: { is: { status: VENDOR_STATUS.ACTIVE } },
         ...(vendorId ? { vendorId } : {}),
         // AND 語意：菜單須同時包含所有指定 tag
         ...(tags?.length ? { tags: { hasEvery: tags } } : {}),
@@ -270,7 +312,12 @@ export class MenusService {
    */
   async findOnePublic(menuId: string) {
     const menu = await this.prisma.menu.findFirst({
-      where: { id: menuId, isActive: true },
+      where: {
+        id: menuId,
+        isActive: true,
+        // 停權商家的菜單回 404
+        vendor: { is: { status: VENDOR_STATUS.ACTIVE } },
+      },
       select: {
         id: true,
         name: true,

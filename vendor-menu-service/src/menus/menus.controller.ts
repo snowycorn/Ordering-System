@@ -7,6 +7,7 @@ import {
   Param,
   Delete,
   Headers,
+  UseGuards,
   UsePipes,
   ValidationPipe,
   Query,
@@ -20,6 +21,7 @@ import { UpdateMenuDto } from './dto/update-menu.dto';
 import { SetDailyQuotaDto } from './dto/set-daily-quota.dto';
 import { GetUploadUrlDto } from './dto/get-upload-url.dto';
 import { parseXUserId } from '../common/parse-x-user-id';
+import { ActiveVendorGuard } from '../common/guards/active-vendor.guard';
 
 // 路徑設計為 /api/v1/vendors/me/menus，確保商家只能操作自己的菜單
 @Controller('api/v1/vendors/me/menus')
@@ -53,6 +55,7 @@ export class MenusController {
    * @Throttle：限制同一 IP 每分鐘最多 10 次請求，防止濫用 pre-signed URL 額度
    */
   @Get('upload-image-url')
+  @UseGuards(ActiveVendorGuard)
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   async getUploadImageUrl(
     @Headers('x-user-id') xUserId: string,
@@ -63,6 +66,7 @@ export class MenusController {
   }
 
   @Post()
+  @UseGuards(ActiveVendorGuard)
   async create(
     @Headers('x-user-id') xUserId: string,
     @Body() createMenuDto: CreateMenuDto,
@@ -87,6 +91,7 @@ export class MenusController {
   }
 
   @Put(':menuId')
+  @UseGuards(ActiveVendorGuard)
   async update(
     @Headers('x-user-id') xUserId: string,
     @Param('menuId') menuId: string,
@@ -97,6 +102,7 @@ export class MenusController {
   }
 
   @Delete(':menuId')
+  @UseGuards(ActiveVendorGuard)
   async remove(
     @Headers('x-user-id') xUserId: string,
     @Param('menuId') menuId: string,
@@ -106,6 +112,7 @@ export class MenusController {
   }
 
   @Put(':menuId/quotas')
+  @UseGuards(ActiveVendorGuard)
   async setDailyQuota(
     @Headers('x-user-id') xUserId: string,
     @Param('menuId') menuId: string,

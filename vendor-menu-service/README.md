@@ -18,8 +18,8 @@ vendor-menu-service
 ├── /api/v1/menus                # 全量菜單查詢、tag 篩選（Recommendation Service 內部用）
 ├── /api/v1/menus/tags           # 菜單標籤選項清單（tag 詞彙單一真實來源）
 ├── /api/v1/vendors/me           # 商家自身資料管理（需 x-user-id header）
-├── /api/v1/vendors/:id          # 管理員用商家查詢與修改
 ├── /api/v1/vendors/me/menus     # 商家菜單 CRUD 與每日限量管理
+├── /api/v1/admin/vendors        # 管理員：建立、查詢、修改、停權/復權商家（需 x-user-role: admin）
 └── /health                      # K8s Liveness/Readiness Probe
 ```
 
@@ -27,7 +27,7 @@ vendor-menu-service
 
 | Table | 說明 |
 |---|---|
-| `vendors` | 商家基本資料（名稱、類別、服務廠區、狀態） |
+| `vendors` | 商家基本資料（名稱、類別、服務廠區、狀態 `status`、停權稽核欄 `suspended_at` / `suspended_by` / `suspend_reason`） |
 | `menus` | 菜單項目（名稱、價格、圖片、預設每日限量、標籤 `tags`） |
 | `daily_quotas` | 指定日期的限量覆蓋設定 |
 
@@ -136,7 +136,7 @@ docker-compose down -v
 | Method | Path | 說明 |
 |---|---|---|
 | `GET` | `/api/v1/vendors/me` | 查詢自己的商家資料 |
-| `PUT` | `/api/v1/vendors/me` | 更新自己的商家資料（name / category / description / factoryZone / status） |
+| `PUT` | `/api/v1/vendors/me` | 更新自己的商家 profile（name / category / description / factoryZone）；`status` 不可由此變更 |
 | `GET` | `/api/v1/vendors/me/menus` | 查詢自己所有菜單（含下架） |
 | `GET` | `/api/v1/vendors/me/menus/:menuId` | 查詢單一菜單詳情（含今日起的 DailyQuota 排程，越權回 404） |
 | `POST` | `/api/v1/vendors/me/menus` | 新增菜單項目（含 `tags` 標籤，可複選） |
@@ -149,12 +149,16 @@ docker-compose down -v
 
 | Method | Path | 說明 |
 |---|---|---|
-| `POST` | `/api/v1/vendors` | **建立新商家帳號**（僅管理員可用，回傳 201） |
-| `GET` | `/api/v1/vendors/:id` | 查詢指定商家 |
-| `PUT` | `/api/v1/vendors/:id` | 更新指定商家資料 |
-| `POST` | `/api/v1/vendors/:id/violation-points` | 違規點數 +1（每次呼叫累加 1，回傳 200） |
+| `POST` | `/api/v1/admin/vendors` | **建立新商家帳號**（僅管理員可用，回傳 201） |
+| `GET` | `/api/v1/admin/vendors/:id` | 查詢指定商家（含敏感管理欄位） |
+| `PUT` | `/api/v1/admin/vendors/:id` | 更新指定商家 profile（name / category / description / factoryZone）；`status` 不可由此變更 |
+| `POST` | `/api/v1/admin/vendors/:id/violation-points` | 違規點數 +1（每次呼叫累加 1，回傳 200） |
+| `POST` | `/api/v1/admin/vendors/:id/suspend` | **停權商家**（body 必填 `reason`，需 `x-user-id` Header）；同步歸零該商家上架菜單於 order-inventory 的庫存，回傳 200 |
+| `POST` | `/api/v1/admin/vendors/:id/reactivate` | **復權商家**；清空停權稽核欄並重推上架菜單庫存，回傳 200 |
 
 > **角色驗證機制**：API Gateway 驗證 JWT 後，將使用者角色寫入 `x-user-role` Header（值如 `admin` / `vendor` / `employee`）。服務內的 `RolesGuard` 讀取此 Header 並對照 `@Roles()` 裝飾器；未標記 `@Roles()` 的端點一律放行。
+
+> **停權設計**：`vendor.status`（`ACTIVE` / `SUSPENDED`）為商家狀態的單一真實來源，僅能透過 `suspend` / `reactivate` 變更。停權**不**改動菜單 `isActive`；公開查詢路徑（員工端 `/api/v1/vendors`、`/api/v1/menus` 等）一律以 `vendor.status = ACTIVE` 過濾，停權商家即自動隱藏。停權同時對 order-inventory 歸零庫存作為補償動作，避免已開放預購視窗仍可下單；自管寫入端點（`/api/v1/vendors/me/menus` CRUD 等）由 `ActiveVendorGuard` 擋下（回 403），讀取端點維持開放。停權稽核欄（`suspendedAt` / `suspendedBy` / `suspendReason`）於停權時寫入、復權時清空。
 
 #### 系統
 

@@ -17,6 +17,9 @@ model Vendor {
   factoryZone  String?  @map("factory_zone") @db.VarChar(100) // 主要服務廠區
   violationPoints Int   @default(0) @map("violation_points") // 違規點數，管理員累加
   status       String   @default("ACTIVE") @db.VarChar(50)
+  suspendedAt   DateTime? @map("suspended_at") @db.Timestamptz   // 停權時間（復權時清空）
+  suspendedBy   Int?      @map("suspended_by")                   // 停權 admin 的 IAM userId
+  suspendReason String?   @map("suspend_reason") @db.Text        // 停權原因（必填於 API 層）
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz
 

@@ -48,7 +48,8 @@ export class AdminVendorsController {
 
   /**
    * PUT /api/v1/admin/vendors/:id
-   * 更新任意商家的資料（例如強制停權、修改授權廠區）。
+   * 更新任意商家的 profile 資料（名稱、分類、描述、授權廠區）。
+   * 停權/復權請改用 POST /:id/suspend、POST /:id/reactivate（status 不可由此端點變更）。
    */
   @Put(':id')
   async update(@Param('id') id: string, @Body() updateVendorDto: UpdateVendorDto) {

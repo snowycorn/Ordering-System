@@ -8,6 +8,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateVendorDto } from './dto/create-vendor.dto';
 import { UpdateVendorDto } from './dto/update-vendor.dto';
 
+// 商家狀態列舉（DB status 欄位用字串儲存）
+export const VENDOR_STATUS = { ACTIVE: 'ACTIVE', SUSPENDED: 'SUSPENDED' } as const;
+
 // 取台灣時間（UTC+8）的當天日期字串，用於查詢 DailyQuota
 function getTaipeiDateString(baseDate?: Date): string {
   const date = baseDate ?? new Date();
@@ -93,6 +96,40 @@ export class VendorsService {
     });
   }
 
+  /**
+   * 停權商家（管理員專用）。記錄停權時間、操作者與原因。
+   * 僅改 vendor.status，菜單 isActive 不動（單一真實來源）；庫存歸零由 MenusService 編排。
+   */
+  async suspend(id: string, suspendedBy: number | undefined, reason: string) {
+    await this.findOne(id);
+    return this.prisma.vendor.update({
+      where: { id },
+      data: {
+        status: VENDOR_STATUS.SUSPENDED,
+        suspendedAt: new Date(),
+        suspendedBy: suspendedBy ?? null,
+        suspendReason: reason,
+      },
+    });
+  }
+
+  /**
+   * 復權商家（管理員專用）。狀態還原 ACTIVE 並清空稽核欄位。
+   * 菜單原本的 isActive 自然保留，無需還原。
+   */
+  async reactivate(id: string) {
+    await this.findOne(id);
+    return this.prisma.vendor.update({
+      where: { id },
+      data: {
+        status: VENDOR_STATUS.ACTIVE,
+        suspendedAt: null,
+        suspendedBy: null,
+        suspendReason: null,
+      },
+    });
+  }
+
   // ---- 公開查詢（員工用）----
 
   /**
@@ -131,8 +168,11 @@ export class VendorsService {
    * 注意：實際剩餘庫存由 Order Service 的 Redis 管理，這裡只回傳「上限」資訊。
    */
   async findVendorMenus(vendorId: string, dateString?: string) {
-    // 先確認商家存在
-    await this.findOne(vendorId);
+    // 先確認商家存在；停權商家對公開端隱藏（回 404）
+    const vendor = await this.findOne(vendorId);
+    if (vendor.status !== VENDOR_STATUS.ACTIVE) {
+      throw new NotFoundException(`找不到 ID 為 ${vendorId} 的商家資料`);
+    }
 
     const targetDateStr = dateString ?? getTaipeiDateString();
     const targetDate = new Date(targetDateStr); // midnight UTC of that date

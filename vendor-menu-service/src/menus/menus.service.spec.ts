@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { MenusService } from './menus.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { OrderInventoryClient } from '../integrations/order-inventory.client';
+import { VendorsService } from '../vendors/vendors.service';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { CreateMenuDto } from './dto/create-menu.dto';
 import { UpdateMenuDto } from './dto/update-menu.dto';
@@ -25,7 +26,13 @@ describe('MenusService', () => {
   };
 
   const mockOrderInventory = {
-    setInventory: jest.fn().mockResolvedValue(undefined),
+    setInventory: jest.fn().mockResolvedValue(true),
+  };
+
+  const mockVendorsService = {
+    suspend: jest.fn(),
+    reactivate: jest.fn(),
+    findByUserId: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -39,6 +46,10 @@ describe('MenusService', () => {
         {
           provide: OrderInventoryClient,
           useValue: mockOrderInventory,
+        },
+        {
+          provide: VendorsService,
+          useValue: mockVendorsService,
         },
       ],
     }).compile();
@@ -154,11 +165,15 @@ describe('MenusService', () => {
   });
 
   describe('findAllPublic', () => {
-    it('should filter by isActive and vendorId', async () => {
+    it('should filter by isActive, vendorId and active vendor', async () => {
       mockPrismaService.menu.findMany.mockResolvedValue([]);
       await service.findAllPublic('vendor-1', true);
       expect(prisma.menu.findMany).toHaveBeenCalledWith(expect.objectContaining({
-        where: { isActive: true, vendorId: 'vendor-1' }
+        where: {
+          isActive: true,
+          vendor: { is: { status: 'ACTIVE' } },
+          vendorId: 'vendor-1',
+        },
       }));
     });
   });
@@ -174,17 +189,61 @@ describe('MenusService', () => {
   });
 
   describe('findOnePublic', () => {
-    it('should return active menu', async () => {
+    it('should return active menu of an active vendor', async () => {
       mockPrismaService.menu.findFirst.mockResolvedValue({ id: 'menu-1' });
       await service.findOnePublic('menu-1');
       expect(prisma.menu.findFirst).toHaveBeenCalledWith(expect.objectContaining({
-        where: { id: 'menu-1', isActive: true }
+        where: {
+          id: 'menu-1',
+          isActive: true,
+          vendor: { is: { status: 'ACTIVE' } },
+        },
       }));
     });
 
     it('should throw NotFoundException if not found or inactive', async () => {
       mockPrismaService.menu.findFirst.mockResolvedValue(null);
       await expect(service.findOnePublic('menu-1')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('suspendVendor', () => {
+    it('should suspend vendor and zero inventory of active menus without touching isActive', async () => {
+      mockVendorsService.suspend.mockResolvedValue({ id: 'vendor-1', status: 'SUSPENDED' });
+      mockPrismaService.menu.findMany.mockResolvedValue([{ id: 'm1' }, { id: 'm2' }]);
+
+      const result = await service.suspendVendor('vendor-1', 99, '違規多次');
+
+      expect(mockVendorsService.suspend).toHaveBeenCalledWith('vendor-1', 99, '違規多次');
+      expect(prisma.menu.findMany).toHaveBeenCalledWith({
+        where: { vendorId: 'vendor-1', isActive: true },
+        select: { id: true },
+      });
+      // 每筆 active 菜單在視窗 7 天都被歸零
+      expect(mockOrderInventory.setInventory).toHaveBeenCalledWith('m1', expect.any(String), 0);
+      expect(mockOrderInventory.setInventory).toHaveBeenCalledWith('m2', expect.any(String), 0);
+      // menu.update 不應被呼叫（不改 isActive）
+      expect(prisma.menu.update).not.toHaveBeenCalled();
+      expect(result.status).toBe('SUSPENDED');
+    });
+  });
+
+  describe('reactivateVendor', () => {
+    it('should reactivate vendor and re-push inventory of active menus', async () => {
+      mockVendorsService.reactivate.mockResolvedValue({ id: 'vendor-1', status: 'ACTIVE' });
+      mockPrismaService.menu.findMany.mockResolvedValue([{ id: 'm1', dailyLimit: 30 }]);
+      mockPrismaService.dailyQuota.findFirst.mockResolvedValue(null);
+
+      const result = await service.reactivateVendor('vendor-1');
+
+      expect(mockVendorsService.reactivate).toHaveBeenCalledWith('vendor-1');
+      expect(prisma.menu.findMany).toHaveBeenCalledWith({
+        where: { vendorId: 'vendor-1', isActive: true },
+        select: { id: true, dailyLimit: true },
+      });
+      // 無 quota 時回退 dailyLimit=30 重推
+      expect(mockOrderInventory.setInventory).toHaveBeenCalledWith('m1', expect.any(String), 30);
+      expect(result.status).toBe('ACTIVE');
     });
   });
 });

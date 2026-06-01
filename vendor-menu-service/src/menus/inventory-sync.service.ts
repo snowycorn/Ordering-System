@@ -28,7 +28,10 @@ export class InventorySyncService {
     boundary.setUTCDate(boundary.getUTCDate() + BOOKING_WINDOW_DAYS - 1);
     const boundaryStr = boundary.toISOString().split('T')[0];
 
-    const menus = await this.prisma.menu.findMany({ where: { isActive: true } });
+    // 僅推進「上架中且商家未停權」的菜單，避免把停權商家的庫存重新 push 回去
+    const menus = await this.prisma.menu.findMany({
+      where: { isActive: true, vendor: { is: { status: 'ACTIVE' } } },
+    });
     this.logger.log(`每日庫存推進：為 ${menus.length} 個菜單種 ${boundaryStr} 的庫存`);
 
     for (const menu of menus) {

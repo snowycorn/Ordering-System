@@ -16,8 +16,4 @@ export class UpdateVendorDto {
   @IsOptional()
   @IsString()
   factoryZone?: string;
-
-  @IsOptional()
-  @IsString()
-  status?: string;
 }
