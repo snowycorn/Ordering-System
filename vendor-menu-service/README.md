@@ -126,7 +126,7 @@ docker-compose down -v
 | Method | Path | Query Params | 說明 |
 |---|---|---|---|
 | `GET` | `/api/v1/vendors` | `factoryZone` (選填，單一廠區) | 查詢所有上架商家；帶 `factoryZone` 時只回服務該廠區的商家（`factoryZones` 陣列包含此值） |
-| `GET` | `/api/v1/factory-zones` | — | 取得合法廠區清單（全系統單一真實來源，供前端渲染選單） |
+| `GET` | `/api/v1/vendors/factory-zones` | — | 取得合法廠區清單（全系統單一真實來源，供前端渲染選單） |
 | `GET` | `/api/v1/vendors/:id/menus` | `date` YYYY-MM-DD (選填，預設今天) | 查詢指定商家菜單及當日配額 |
 | `GET` | `/api/v1/menus` | `vendorId` (選填)、`isActive` (選填，預設 true)、`tags` (選填，可多值) | 全量菜單，供 Recommendation Service；`tags` 為 AND 篩選 |
 | `GET` | `/api/v1/menus/tags` | — | 所有合法 tag 選項（`code` 英文 + `label` 中文），tag 詞彙單一真實來源 |
@@ -152,7 +152,7 @@ docker-compose down -v
 |---|---|---|
 | `POST` | `/api/v1/admin/vendors` | **建立新商家帳號**（僅管理員可用，回傳 201） |
 | `GET` | `/api/v1/admin/vendors/:id` | 查詢指定商家（含敏感管理欄位） |
-| `PUT` | `/api/v1/admin/vendors/:id` | 更新指定商家 profile（name / category / description / factoryZones）；`factoryZones`（服務廠區，限 `GET /api/v1/factory-zones` 清單內值）僅能由管理員於此變更，`status` 不可由此變更 |
+| `PUT` | `/api/v1/admin/vendors/:id` | 更新指定商家 profile（name / category / description / factoryZones）；`factoryZones`（服務廠區，限 `GET /api/v1/vendors/factory-zones` 清單內值）僅能由管理員於此變更，`status` 不可由此變更 |
 | `POST` | `/api/v1/admin/vendors/:id/violation-points` | 違規點數 +1（每次呼叫累加 1，回傳 200） |
 | `POST` | `/api/v1/admin/vendors/:id/suspend` | **停權商家**（body 必填 `reason`，需 `x-user-id` Header）；同步歸零該商家上架菜單於 order-inventory 的庫存，回傳 200 |
 | `POST` | `/api/v1/admin/vendors/:id/reactivate` | **復權商家**；清空停權稽核欄並重推上架菜單庫存，回傳 200 |

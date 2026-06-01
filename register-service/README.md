@@ -213,7 +213,7 @@ docker-compose down -v                 # 停止並清除資料（慎用）
 | `vendorName` | string | ✅ | 商家名稱，最多 255 字 |
 | `email` | string (email) | ✅ | 聯絡 email；核准後作為登入帳號，最多 255 字 |
 | `phone` | string | — | 聯絡電話，最多 50 字 |
-| `factoryZones` | string[] | — | 申請服務廠區（可多個），每項最多 100 字。合法廠區清單由 vendor-menu 把關（見 `GET /api/v1/factory-zones`） |
+| `factoryZones` | string[] | — | 申請服務廠區（可多個），每項最多 100 字。合法廠區清單由 vendor-menu 把關（見 `GET /api/v1/vendors/factory-zones`） |
 | `documentsKey` | string | — | upload-url 端點回傳的 S3 object key |
 
 **Response 201**

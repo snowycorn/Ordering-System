@@ -119,10 +119,10 @@ describe('Vendors (e2e)', () => {
     });
   });
 
-  describe('廠區清單端點 (GET /api/v1/factory-zones)', () => {
+  describe('廠區清單端點 (GET /api/v1/vendors/factory-zones)', () => {
     it('GET / - 回傳合法廠區清單', async () => {
       const res = await request(app.getHttpServer())
-        .get('/api/v1/factory-zones')
+        .get('/api/v1/vendors/factory-zones')
         .expect(200);
 
       expect(res.body).toContain('A廠');

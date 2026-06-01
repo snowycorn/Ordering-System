@@ -9,9 +9,9 @@ import { ActiveVendorGuard } from '../common/guards/active-vendor.guard';
 @Module({
   controllers: [
     MeVendorsController,      // /api/v1/vendors/me（精確路由優先）
+    FactoryZonesController,   // /api/v1/vendors/factory-zones（精確路由優先）
     PublicVendorsController,  // /api/v1/vendors & /api/v1/vendors/:id/menus
     AdminVendorsController,   // /api/v1/admin/vendors
-    FactoryZonesController,   // /api/v1/factory-zones
   ],
   providers: [VendorsService, ActiveVendorGuard],
   exports: [VendorsService],
