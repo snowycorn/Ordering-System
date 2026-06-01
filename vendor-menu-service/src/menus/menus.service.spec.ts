@@ -165,9 +165,9 @@ describe('MenusService', () => {
   });
 
   describe('findAllPublic', () => {
-    it('should filter by isActive, vendorId and active vendor', async () => {
+    it('should always force isActive: true and filter by vendorId and active vendor', async () => {
       mockPrismaService.menu.findMany.mockResolvedValue([]);
-      await service.findAllPublic('vendor-1', true);
+      await service.findAllPublic('vendor-1');
       expect(prisma.menu.findMany).toHaveBeenCalledWith(expect.objectContaining({
         where: {
           isActive: true,
@@ -179,7 +179,7 @@ describe('MenusService', () => {
 
     it('should filter by factoryZone via vendor.factoryZones has', async () => {
       mockPrismaService.menu.findMany.mockResolvedValue([]);
-      await service.findAllPublic(undefined, true, undefined, 'A廠');
+      await service.findAllPublic(undefined, undefined, 'A廠');
       expect(prisma.menu.findMany).toHaveBeenCalledWith(expect.objectContaining({
         where: {
           isActive: true,

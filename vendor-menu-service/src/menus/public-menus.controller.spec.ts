@@ -34,27 +34,21 @@ describe('PublicMenusController', () => {
 
   describe('findAll', () => {
     it('should call menusService.findAllPublic with correct query params', async () => {
-      const query: ListPublicMenusQueryDto = { vendorId: 'vendor-1', isActive: false };
-      await controller.findAll(query);
-      expect(service.findAllPublic).toHaveBeenCalledWith('vendor-1', false, undefined, undefined);
-    });
-
-    it('should default isActive to true', async () => {
       const query: ListPublicMenusQueryDto = { vendorId: 'vendor-1' };
       await controller.findAll(query);
-      expect(service.findAllPublic).toHaveBeenCalledWith('vendor-1', true, undefined, undefined);
+      expect(service.findAllPublic).toHaveBeenCalledWith('vendor-1', undefined, undefined);
     });
 
     it('should pass tags filter through to findAllPublic', async () => {
       const query: ListPublicMenusQueryDto = { vendorId: 'vendor-1', tags: ['BEEF', 'SPICY'] };
       await controller.findAll(query);
-      expect(service.findAllPublic).toHaveBeenCalledWith('vendor-1', true, ['BEEF', 'SPICY'], undefined);
+      expect(service.findAllPublic).toHaveBeenCalledWith('vendor-1', ['BEEF', 'SPICY'], undefined);
     });
 
     it('should pass factoryZone filter through to findAllPublic', async () => {
       const query: ListPublicMenusQueryDto = { factoryZone: 'A廠' };
       await controller.findAll(query);
-      expect(service.findAllPublic).toHaveBeenCalledWith(undefined, true, undefined, 'A廠');
+      expect(service.findAllPublic).toHaveBeenCalledWith(undefined, undefined, 'A廠');
     });
   });
 

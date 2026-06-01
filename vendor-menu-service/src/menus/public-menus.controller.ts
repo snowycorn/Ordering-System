@@ -33,15 +33,16 @@ export class PublicMenusController {
   /**
    * GET /api/v1/menus
    * GET /api/v1/menus?vendorId=xxx
-   * GET /api/v1/menus?isActive=false
    * GET /api/v1/menus?tags=BEEF&tags=SPICY （AND：同時含所有指定 tag）
    * GET /api/v1/menus?factoryZone=A廠 （只回服務該廠區商家的菜單）
+   *
+   * 此端點僅回「上架」菜單（永遠 isActive=true），不接受 isActive 參數。
+   * 商家要看自己的菜單（含下架）請走 owner-scoped 的 /api/v1/vendors/me/menus。
    */
   @Get()
   async findAll(@Query() query: ListPublicMenusQueryDto) {
     return this.menusService.findAllPublic(
       query.vendorId,
-      query.isActive ?? true,
       query.tags,
       query.factoryZone,
     );

@@ -1,5 +1,5 @@
 // src/menus/dto/list-public-menus-query.dto.ts
-import { IsOptional, IsUUID, IsBoolean, IsArray, IsIn, IsString } from 'class-validator';
+import { IsOptional, IsUUID, IsArray, IsIn, IsString } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { MENU_TAG_CODES, MenuTagCode } from '../menu-tags.constant';
 
@@ -16,15 +16,9 @@ export class ListPublicMenusQueryDto {
   @IsString()
   factoryZone?: string;
 
-  // 過濾啟用狀態（預設 true，Recommendation Service 只需要上架的菜單）
-  @IsOptional()
-  @IsBoolean()
-  @Transform(({ value }) => {
-    if (value === 'true') return true;
-    if (value === 'false') return false;
-    return value;
-  })
-  isActive?: boolean = true;
+  // 注意：此端點刻意不提供 isActive 參數，永遠只回上架菜單，
+  // 避免員工以 ?isActive=false 查到下架/未上架菜單。
+  // 商家要看自己的（含下架）請走 owner-scoped 的 /api/v1/vendors/me/menus。
 
   // 依 tag 過濾（AND 語意：菜單須同時含所有指定 tag）。
   // 支援 ?tags=BEEF 單值與 ?tags=BEEF&tags=SPICY 多值，皆正規化成陣列。

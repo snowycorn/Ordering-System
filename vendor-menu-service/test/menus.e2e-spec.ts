@@ -8,7 +8,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
 describe('MenusController (e2e)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
-  
+
   let vendorAId: string;
   let vendorBId: string;
   let menuAId: string;
@@ -25,7 +25,7 @@ describe('MenusController (e2e)', () => {
     app = moduleFixture.createNestApplication();
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
     await app.init();
-    
+
     prisma = app.get<PrismaService>(PrismaService);
 
     // Create 2 fake vendors for testing ownership logic
@@ -42,8 +42,8 @@ describe('MenusController (e2e)', () => {
 
   afterAll(async () => {
     // Delete test vendors, this will cascade delete their menus
-    if (vendorAId) await prisma.vendor.delete({ where: { id: vendorAId } }).catch(() => {});
-    if (vendorBId) await prisma.vendor.delete({ where: { id: vendorBId } }).catch(() => {});
+    if (vendorAId) await prisma.vendor.delete({ where: { id: vendorAId } }).catch(() => { });
+    if (vendorBId) await prisma.vendor.delete({ where: { id: vendorBId } }).catch(() => { });
     await app.close();
   });
 
@@ -74,7 +74,7 @@ describe('MenusController (e2e)', () => {
         .get('/api/v1/vendors/me/menus')
         .set('x-user-id', String(vendorAUserId))
         .expect(200);
-      
+
       expect(Array.isArray(res.body)).toBe(true);
       const found = res.body.find((m: any) => m.id === menuAId);
       expect(found).toBeDefined();
@@ -85,7 +85,7 @@ describe('MenusController (e2e)', () => {
         .get(encodeURI('/api/v1/vendors/me/menus/upload-image-url?contentType=image/jpeg'))
         .set('x-user-id', String(vendorAUserId))
         .expect(200);
-      
+
       expect(res.body.uploadUrl).toBeDefined();
       expect(res.body.imageUrl).toBeDefined();
     });
@@ -98,7 +98,7 @@ describe('MenusController (e2e)', () => {
         .set('x-user-id', String(vendorAUserId))
         .send({ targetDate: futureDate, maxQuantity: 20 })
         .expect(200);
-      
+
       expect(res.body.maxQuantity).toBe(20);
     });
 
@@ -198,12 +198,22 @@ describe('MenusController (e2e)', () => {
       expect(found).toBeUndefined();
     });
 
+    it('GET /api/v1/menus?isActive=false - 參數被 whitelist 剝除，仍只回上架菜單 (含 Menu A)', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/menus?isActive=false')
+        .expect(200);
+
+      const found = res.body.find((m: any) => m.id === menuAId);
+      expect(found).toBeDefined();
+      expect(res.body.every((m: any) => m.isActive === true)).toBe(true);
+    });
+
     it('DELETE /api/v1/vendors/me/menus/:menuId - 軟刪除 (Vendor A)', async () => {
       const res = await request(app.getHttpServer())
         .delete(`/api/v1/vendors/me/menus/${menuAId}`)
         .set('x-user-id', String(vendorAUserId))
         .expect(200);
-      
+
       expect(res.body.isActive).toBe(false);
     });
 
@@ -211,7 +221,7 @@ describe('MenusController (e2e)', () => {
       const res = await request(app.getHttpServer())
         .get('/api/v1/menus')
         .expect(200);
-      
+
       const found = res.body.find((m: any) => m.id === menuAId);
       expect(found).toBeUndefined();
     });
