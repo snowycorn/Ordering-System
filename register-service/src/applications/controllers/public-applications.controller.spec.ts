@@ -56,7 +56,7 @@ describe('PublicApplicationsController', () => {
         vendorName: 'Test Vendor',
         email: 'v@test.com',
         phone: '0912345678',
-        factoryZone: 'North',
+        factoryZones: ['A廠'],
         documentsKey: 'vendor-documents/uuid.pdf',
       };
       const mockResult = {

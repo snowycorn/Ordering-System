@@ -59,17 +59,26 @@ describe('Vendors (e2e)', () => {
         .expect(400);
     });
 
+    it('POST - 失敗 (Validation 錯誤，非法廠區)', () => {
+      return request(app.getHttpServer())
+        .post('/api/v1/admin/vendors')
+        .set(adminHeader)
+        .send({ name: 'Bad Zone Vendor', factoryZones: ['X廠'] })
+        .expect(400);
+    });
+
     it('POST - 成功 (Admin)', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/admin/vendors')
         .set(adminHeader)
-        .send({ name: 'E2E Vendor', category: 'Test', factoryZone: 'A廠', userId: testVendorUserId })
+        .send({ name: 'E2E Vendor', category: 'Test', factoryZones: ['A廠'], userId: testVendorUserId })
         .expect(201);
-      
+
       expect(res.body.id).toBeDefined();
       expect(res.body.name).toBe('E2E Vendor');
       expect(res.body.status).toBe('ACTIVE');
-      
+      expect(res.body.factoryZones).toEqual(['A廠']);
+
       testVendorId = res.body.id;
     });
 
@@ -104,9 +113,19 @@ describe('Vendors (e2e)', () => {
       const res = await request(app.getHttpServer())
         .get(encodeURI('/api/v1/vendors?factoryZone=A廠'))
         .expect(200);
-      
+
       expect(Array.isArray(res.body)).toBe(true);
-      expect(res.body.every((v: any) => v.factoryZone === 'A廠')).toBe(true);
+      expect(res.body.every((v: any) => v.factoryZones.includes('A廠'))).toBe(true);
+    });
+  });
+
+  describe('廠區清單端點 (GET /api/v1/factory-zones)', () => {
+    it('GET / - 回傳合法廠區清單', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/factory-zones')
+        .expect(200);
+
+      expect(res.body).toContain('A廠');
     });
   });
 
@@ -128,6 +147,27 @@ describe('Vendors (e2e)', () => {
         .expect(200);
 
       expect(res.body.name).toBe('E2E Vendor Updated');
+    });
+
+    it('PUT /me - 商家不能自改廠區 (factoryZones 被 whitelist 剝除)', async () => {
+      const res = await request(app.getHttpServer())
+        .put('/api/v1/vendors/me')
+        .set('x-user-id', String(testVendorUserId))
+        .send({ factoryZones: ['B廠', 'C廠'] })
+        .expect(200);
+
+      // 廠區維持建立時的 ['A廠']，未被商家自管請求改動
+      expect(res.body.factoryZones).toEqual(['A廠']);
+    });
+
+    it('PUT /admin/vendors/:id - 管理員可改廠區', async () => {
+      const res = await request(app.getHttpServer())
+        .put(`/api/v1/admin/vendors/${testVendorId}`)
+        .set('x-user-role', 'admin')
+        .send({ factoryZones: ['B廠', 'C廠'] })
+        .expect(200);
+
+      expect(res.body.factoryZones).toEqual(['B廠', 'C廠']);
     });
 
     it('GET /me - 失敗 (不存在的 userId)', async () => {

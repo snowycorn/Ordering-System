@@ -1,5 +1,14 @@
 // src/vendors/dto/create-vendor.dto.ts
-import { IsString, IsNotEmpty, IsOptional, IsInt, MaxLength } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsInt,
+  IsArray,
+  IsIn,
+  MaxLength,
+} from 'class-validator';
+import { FACTORY_ZONES, FactoryZone } from '../factory-zones.constant';
 
 export class CreateVendorDto {
   @IsString()
@@ -21,8 +30,10 @@ export class CreateVendorDto {
   @IsString()
   description?: string;
 
+  // 服務廠區（可多個），限定 FACTORY_ZONES 合法值
   @IsOptional()
-  @IsString()
-  @MaxLength(100)
-  factoryZone?: string;
+  @IsArray()
+  @IsString({ each: true })
+  @IsIn(FACTORY_ZONES, { each: true })
+  factoryZones?: FactoryZone[];
 }

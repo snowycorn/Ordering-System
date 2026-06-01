@@ -117,7 +117,7 @@ describe('Register Service (E2E)', () => {
       vendorName: 'E2E Test Vendor',
       email: 'e2e@test.com',
       phone: '0912345678',
-      factoryZone: 'North',
+      factoryZones: ['A廠'],
       documentsKey: 'vendor-documents/mock-uuid.pdf',
     };
     // Apply overrides: set to value, or delete key if value is undefined

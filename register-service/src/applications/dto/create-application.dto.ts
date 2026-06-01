@@ -4,6 +4,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsEmail,
+  IsArray,
   MaxLength,
 } from 'class-validator';
 
@@ -26,10 +27,13 @@ export class CreateApplicationDto {
   @MaxLength(50)
   phone?: string;
 
+  // 申請服務的廠區（可多個）。此處僅做結構驗證；
+  // 合法廠區值由 vendor-menu 在核准建立商家時權威把關（@IsIn）。
   @IsOptional()
-  @IsString()
-  @MaxLength(100)
-  factoryZone?: string;
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(100, { each: true })
+  factoryZones?: string[];
 
   // 已上傳到私有 S3 Bucket 的營登 PDF object key（由 upload-url 端點回傳）
   @IsOptional()

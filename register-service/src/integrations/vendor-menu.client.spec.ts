@@ -44,12 +44,12 @@ describe('VendorMenuClient', () => {
   describe('createVendor()', () => {
     it('成功（2xx）時不拋出', async () => {
       fetchSpy.mockResolvedValueOnce(mockResponse(201, {}));
-      await expect(client.createVendor('Test Vendor', 'North', 42)).resolves.toBeUndefined();
+      await expect(client.createVendor('Test Vendor', ['A廠'], 42)).resolves.toBeUndefined();
     });
 
-    it('呼叫 POST /api/v1/admin/vendors 帶有 x-user-role: admin header 與 userId', async () => {
+    it('呼叫 POST /api/v1/admin/vendors 帶有 x-user-role: admin header、userId 與 factoryZones 陣列', async () => {
       fetchSpy.mockResolvedValueOnce(mockResponse(201, {}));
-      await client.createVendor('Test Vendor', 'North', 42);
+      await client.createVendor('Test Vendor', ['A廠', 'B廠'], 42);
 
       const call = fetchSpy.mock.calls[0];
       const url = call[0] as string;
@@ -58,20 +58,25 @@ describe('VendorMenuClient', () => {
       expect((options.headers as Record<string, string>)['x-user-role']).toBe('admin');
       const body = JSON.parse(options.body as string) as Record<string, unknown>;
       expect(body.userId).toBe(42);
+      expect(body.factoryZones).toEqual(['A廠', 'B廠']);
     });
 
-    it('factoryZone 為 undefined 時不傳入 body，但仍帶 userId', async () => {
+    it('factoryZones 為 undefined / 空陣列時不傳入 body，但仍帶 userId', async () => {
       fetchSpy.mockResolvedValueOnce(mockResponse(201, {}));
       await client.createVendor('Test Vendor', undefined, 42);
-
-      const body = JSON.parse(fetchSpy.mock.calls[0][1].body as string) as Record<string, unknown>;
-      expect(body).not.toHaveProperty('factoryZone');
+      let body = JSON.parse(fetchSpy.mock.calls[0][1].body as string) as Record<string, unknown>;
+      expect(body).not.toHaveProperty('factoryZones');
       expect(body.userId).toBe(42);
+
+      fetchSpy.mockResolvedValueOnce(mockResponse(201, {}));
+      await client.createVendor('Test Vendor', [], 42);
+      body = JSON.parse(fetchSpy.mock.calls[1][1].body as string) as Record<string, unknown>;
+      expect(body).not.toHaveProperty('factoryZones');
     });
 
     it('HTTP 錯誤（非 2xx） → BadRequestException', async () => {
       fetchSpy.mockResolvedValueOnce(mockResponse(500, 'Internal Server Error'));
-      await expect(client.createVendor('Test Vendor', 'North', 42)).rejects.toThrow(
+      await expect(client.createVendor('Test Vendor', ['A廠'], 42)).rejects.toThrow(
         BadRequestException,
       );
     });

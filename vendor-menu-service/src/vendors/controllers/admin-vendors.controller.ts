@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { VendorsService } from '../vendors.service';
 import { CreateVendorDto } from '../dto/create-vendor.dto';
-import { UpdateVendorDto } from '../dto/update-vendor.dto';
+import { AdminUpdateVendorDto } from '../dto/admin-update-vendor.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 
 /**
@@ -48,11 +48,15 @@ export class AdminVendorsController {
 
   /**
    * PUT /api/v1/admin/vendors/:id
-   * 更新任意商家的 profile 資料（名稱、分類、描述、授權廠區）。
+   * 更新任意商家的 profile 資料（名稱、分類、描述、服務廠區 factoryZones）。
+   * 廠區僅 admin 可改（商家自管的 PUT /vendors/me 不含此欄位）。
    * 停權/復權請改用 POST /:id/suspend、POST /:id/reactivate（status 不可由此端點變更）。
    */
   @Put(':id')
-  async update(@Param('id') id: string, @Body() updateVendorDto: UpdateVendorDto) {
+  async update(
+    @Param('id') id: string,
+    @Body() updateVendorDto: AdminUpdateVendorDto,
+  ) {
     return this.vendorsService.update(id, updateVendorDto);
   }
 

@@ -146,6 +146,19 @@ describe('VendorsService', () => {
       await expect(service.update('uuid-999', {})).rejects.toThrow(NotFoundException);
       expect(prisma.vendor.update).not.toHaveBeenCalled();
     });
+
+    it('should pass factoryZones through to prisma data (admin update)', async () => {
+      mockPrismaService.vendor.findUnique.mockResolvedValue({ id: 'uuid-1' });
+      const adminDto = { name: 'V', factoryZones: ['A廠', 'B廠'] };
+      mockPrismaService.vendor.update.mockResolvedValue({ id: 'uuid-1', ...adminDto });
+
+      await service.update('uuid-1', adminDto);
+
+      expect(prisma.vendor.update).toHaveBeenCalledWith({
+        where: { id: 'uuid-1' },
+        data: adminDto,
+      });
+    });
   });
 
   describe('addViolationPoint', () => {
@@ -184,13 +197,13 @@ describe('VendorsService', () => {
       });
     });
 
-    it('should filter by factoryZone if provided', async () => {
+    it('should filter by factoryZone (array has) if provided', async () => {
       mockPrismaService.vendor.findMany.mockResolvedValue([]);
-      
+
       await service.findAll('Zone A');
 
       expect(prisma.vendor.findMany).toHaveBeenCalledWith({
-        where: { status: 'ACTIVE', factoryZone: 'Zone A' },
+        where: { status: 'ACTIVE', factoryZones: { has: 'Zone A' } },
         select: expect.any(Object),
         orderBy: { name: 'asc' },
       });

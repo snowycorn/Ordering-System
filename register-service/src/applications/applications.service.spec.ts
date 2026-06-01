@@ -19,7 +19,7 @@ function makePending(overrides: Partial<ReturnType<typeof makePending>> = {}) {
     vendorName: 'Test Vendor',
     email: 'vendor@test.com',
     phone: '0912345678',
-    factoryZone: 'North',
+    factoryZones: ['A廠'],
     documentsKey: 'vendor-documents/abc.pdf',
     status: 'PENDING',
     reviewNotes: null,
@@ -93,7 +93,7 @@ describe('ApplicationsService', () => {
         vendorName: 'Test Vendor',
         email: 'vendor@test.com',
         phone: '0912345678',
-        factoryZone: 'North',
+        factoryZones: ['A廠'],
         documentsKey: 'vendor-documents/abc.pdf',
       });
 
@@ -197,7 +197,7 @@ describe('ApplicationsService', () => {
         'vendor@test.com',
         expect.any(String),
       );
-      expect(vendorMenuMock.createVendor).toHaveBeenCalledWith('Test Vendor', 'North', 42);
+      expect(vendorMenuMock.createVendor).toHaveBeenCalledWith('Test Vendor', ['A廠'], 42);
       expect(prismaMock.pendingVendor.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ status: 'APPROVED' }),

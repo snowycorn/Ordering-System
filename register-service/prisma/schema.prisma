@@ -17,7 +17,7 @@ model PendingVendor {
   vendorName   String    @map("vendor_name") @db.VarChar(255)
   email        String    @db.VarChar(255) // 聯絡 email，核准後作為 IAM 建立帳號的登入帳號
   phone        String?   @db.VarChar(50)
-  factoryZone  String?   @map("factory_zone") @db.VarChar(100) // 申請服務的廠區
+  factoryZones String[]  @default([]) @map("factory_zones") // 申請服務的廠區（可多個）；合法值由 vendor-menu 把關
   documentsKey String?   @map("documents_url") @db.Text // 營登 PDF 在私有 S3 Bucket 的 object key
   status       String    @default("PENDING") @db.VarChar(50) // PENDING | APPROVED | REJECTED
   reviewNotes  String?   @map("review_notes") @db.Text // 福委會審核備註 / 駁回原因

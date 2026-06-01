@@ -7,6 +7,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateVendorDto } from './dto/create-vendor.dto';
 import { UpdateVendorDto } from './dto/update-vendor.dto';
+import { AdminUpdateVendorDto } from './dto/admin-update-vendor.dto';
 
 // 商家狀態列舉（DB status 欄位用字串儲存）
 export const VENDOR_STATUS = { ACTIVE: 'ACTIVE', SUSPENDED: 'SUSPENDED' } as const;
@@ -76,7 +77,7 @@ export class VendorsService {
     return vendor;
   }
 
-  async update(id: string, updateVendorDto: UpdateVendorDto) {
+  async update(id: string, updateVendorDto: UpdateVendorDto | AdminUpdateVendorDto) {
     await this.findOne(id);
     return this.prisma.vendor.update({
       where: { id },
@@ -140,15 +141,15 @@ export class VendorsService {
     return this.prisma.vendor.findMany({
       where: {
         status: 'ACTIVE',
-        // factoryZone 有傳才過濾，沒傳就返回全部
-        ...(factoryZone ? { factoryZone } : {}),
+        // factoryZone 有傳才過濾（比對商家 factoryZones 陣列是否含此廠區），沒傳就返回全部
+        ...(factoryZone ? { factoryZones: { has: factoryZone } } : {}),
       },
       select: {
         id: true,
         name: true,
         category: true,
         description: true,
-        factoryZone: true,
+        factoryZones: true,
         status: true,
       },
       orderBy: { name: 'asc' },

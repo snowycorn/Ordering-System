@@ -33,11 +33,11 @@ export class VendorMenuClient {
    */
   async createVendor(
     name: string,
-    factoryZone: string | null | undefined,
+    factoryZones: string[] | null | undefined,
     userId: number,
   ): Promise<void> {
     const body: Record<string, unknown> = { name, userId };
-    if (factoryZone) body.factoryZone = factoryZone;
+    if (factoryZones?.length) body.factoryZones = factoryZones;
 
     const res = await fetch(`${this.vendorMenuUrl}/api/v1/admin/vendors`, {
       method: 'POST',

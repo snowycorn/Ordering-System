@@ -37,7 +37,7 @@ export class ApplicationsService {
         vendorName: dto.vendorName,
         email: dto.email,
         phone: dto.phone,
-        factoryZone: dto.factoryZone,
+        factoryZones: dto.factoryZones ?? [],
         documentsKey: dto.documentsKey,
         status: 'PENDING',
       },
@@ -127,7 +127,7 @@ export class ApplicationsService {
 
     // 3. vendor-menu：建立商家記錄並綁定 userId；失敗則補償刪除剛建的 IAM 帳號
     try {
-      await this.vendorMenuClient.createVendor(pending.vendorName, pending.factoryZone, userId);
+      await this.vendorMenuClient.createVendor(pending.vendorName, pending.factoryZones, userId);
     } catch (err) {
       await this.compensateIamUser(userId);
       throw err;
