@@ -144,7 +144,7 @@ jobs:
 
             # ── vendor-menu-service ───────────────────────────────────────────
             cd ~/app/vendor-menu-service
-            npm install
+            npm ci
             cat > .env << EOF
             NODE_ENV=production
             PORT=3007
@@ -162,7 +162,7 @@ jobs:
 
             # ── register-service ──────────────────────────────────────────────
             cd ~/app/register-service
-            npm install
+            npm ci
             cat > .env << EOF
             NODE_ENV=production
             PORT=3008
