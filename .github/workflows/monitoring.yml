@@ -49,6 +49,14 @@ jobs:
 
             cd ~/app/monitoring
 
+            # ── 2.5 磁碟守門：清理 + 檢查可用空間（EC2-B 磁碟小，避免拉一半才爆）──
+            sudo docker system prune -f || true
+            AVAIL_KB=$(df --output=avail / | tail -1)
+            echo "根分割區可用空間：$((AVAIL_KB/1024))MB"
+            if [ "$AVAIL_KB" -lt 2097152 ]; then
+              echo "❌ 根分割區可用空間 < 2G，請先擴大 EBS 或清理後重試"; exit 1
+            fi
+
             # ── 3. 啟動中央 stack（Prometheus + Loki + Grafana）─────────────────
             #    Prometheus 的 scrape 目標走各服務私有 IP（已寫在 prometheus.yml）。
             sudo docker compose up -d --remove-orphans

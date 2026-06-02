@@ -28,10 +28,10 @@ schema_config:
         period: 24h
 
 limits_config:
-  # 日誌保留 7 天（168h）
-  retention_period: 168h
+  # 日誌保留 2 天（48h）—— EC2-B 磁碟小，縮短保留避免撐爆
+  retention_period: 48h
   reject_old_samples: true
-  reject_old_samples_max_age: 168h
+  reject_old_samples_max_age: 48h
 
 compactor:
   working_directory: /loki/compactor

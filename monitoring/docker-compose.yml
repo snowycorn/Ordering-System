@@ -17,9 +17,16 @@ services:
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
-      - '--storage.tsdb.retention.time=15d'
+      # 時間/容量任一先到就刪舊資料（EC2-B 磁碟小，避免撐爆）
+      - '--storage.tsdb.retention.time=3d'
+      - '--storage.tsdb.retention.size=512MB'
     ports:
       - '9090:9090'
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - monitoring
 
@@ -33,6 +40,11 @@ services:
       - loki-data:/loki
     ports:
       - '3100:3100'
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - monitoring
 
@@ -51,6 +63,11 @@ services:
     ports:
       # 若本台同時跑 NestJS（佔 3000），把左邊改成 3300:3000
       - '3000:3000'
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     depends_on:
       - prometheus
       - loki
