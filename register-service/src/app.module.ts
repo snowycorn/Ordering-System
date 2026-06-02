@@ -2,9 +2,11 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD, Reflector } from '@nestjs/core';
+import { LoggerModule } from 'nestjs-pino';
 import { PrismaModule } from './prisma/prisma.module';
 import { ApplicationsModule } from './applications/applications.module';
 import { HealthModule } from './health/health.module';
+import { MetricsModule } from './common/metrics/metrics.module';
 import { envValidationSchema } from './config/env.validation';
 import { RolesGuard } from './common/guards/roles.guard';
 
@@ -26,9 +28,18 @@ import { RolesGuard } from './common/guards/roles.guard';
         ? []
         : [{ name: 'default', ttl: 60000, limit: 100 }],
     ),
+    // 結構化 JSON 日誌（stdout → Promtail → Loki）；test 環境關閉以免污染測試輸出
+    LoggerModule.forRoot({
+      pinoHttp: {
+        level: process.env.LOG_LEVEL ?? 'info',
+        autoLogging: process.env.NODE_ENV !== 'test',
+        enabled: process.env.NODE_ENV !== 'test',
+      },
+    }),
     PrismaModule,
     ApplicationsModule,
     HealthModule,
+    MetricsModule,
   ],
   providers: [
     Reflector,

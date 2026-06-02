@@ -434,6 +434,26 @@ DB 健康狀態探活，供 EC2 負載平衡器或 Docker Healthcheck 使用。
 
 ---
 
+## 可觀測性 (Observability)
+
+本服務已接入集中式監控（Prometheus + Loki + Grafana，設定見 [`../monitoring`](../monitoring)）。
+
+### Metrics
+
+`GET /metrics`（Prometheus 文字格式）**走 VPC 內網由 Prometheus 直抓，不經 Kong**（無 JWT）。暴露：
+- `http_requests_total`（counter）labels：`method` / `route` / `status_code`
+- `http_request_duration_seconds`（histogram）同上 labels
+- Node.js 預設 metric（`process_*`、`nodejs_*`）
+
+> `route` label 使用路由模板而非實際 id，避免 label 高基數。
+
+### Logs
+
+啟用 `nestjs-pino`，每個 HTTP 請求輸出一筆 **JSON log 到 stdout**，由各 host 的 Promtail 收集推送至 Loki。
+`LOG_LEVEL` 可調整等級（預設 `info`），`NODE_ENV=test` 時關閉。
+
+---
+
 ## 文件上傳機制（AWS S3 Pre-signed URL）
 
 營登 PDF 存放在**私有 S3 Bucket**，整個上傳/讀取流程完全透過 Pre-signed URL：

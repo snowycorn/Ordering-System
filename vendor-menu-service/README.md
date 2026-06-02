@@ -202,6 +202,30 @@ docker-compose down -v
 
 ---
 
+## 可觀測性 (Observability)
+
+本服務已接入集中式監控（Prometheus + Loki + Grafana，設定見 [`../monitoring`](../monitoring)）。
+
+### Metrics
+
+| Method | Path | 說明 |
+|---|---|---|
+| `GET` | `/metrics` | Prometheus 文字格式。**走 VPC 內網由 Prometheus 直抓，不經 Kong**（無 JWT） |
+
+暴露的 metric：
+- `http_requests_total`（counter）labels：`method` / `route` / `status_code`
+- `http_request_duration_seconds`（histogram）同上 labels
+- Node.js 預設 metric（`process_*`、`nodejs_*`：CPU、記憶體、heap、GC、event loop）
+
+> `route` label 使用路由模板（如 `/api/v1/menus/:menuId`）而非實際 id，避免 label 高基數。
+
+### Logs
+
+啟用 `nestjs-pino`，每個 HTTP 請求輸出一筆 **JSON log 到 stdout**（含 method / url / status / responseTime / reqId）。
+由各 host 的 Promtail 收集推送至 Loki。`LOG_LEVEL` 可調整等級（預設 `info`），`NODE_ENV=test` 時關閉以免污染測試輸出。
+
+---
+
 ## 生產部署
 
 本服務使用 Multi-Stage Docker Build，生產 Image 不包含原始碼與開發依賴：

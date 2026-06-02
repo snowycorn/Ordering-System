@@ -1,10 +1,14 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+
+  // 改用 pino 作為全域 logger，輸出 JSON 到 stdout（給 Promtail → Loki）
+  app.useLogger(app.get(Logger));
 
   // 全域 ValidationPipe，所有路由都套用
   app.useGlobalPipes(
@@ -19,6 +23,6 @@ async function bootstrap() {
   const port = configService.get<number>('PORT', 3008);
 
   await app.listen(port);
-  console.log(`[RegisterService] running on port ${port}`);
+  app.get(Logger).log(`[RegisterService] running on port ${port}`);
 }
 void bootstrap();

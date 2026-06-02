@@ -3,12 +3,14 @@ import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD, Reflector } from '@nestjs/core';
+import { LoggerModule } from 'nestjs-pino';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { VendorsModule } from './vendors/vendors.module';
 import { MenusModule } from './menus/menus.module';
 import { HealthModule } from './health/health.module';
+import { MetricsModule } from './common/metrics/metrics.module';
 import { envValidationSchema } from './config/env.validation';
 import { RolesGuard } from './common/guards/roles.guard';
 
@@ -33,10 +35,19 @@ import { RolesGuard } from './common/guards/roles.guard';
     ]),
     // 排程模組：供每日庫存推進 cron 使用
     ScheduleModule.forRoot(),
+    // 結構化 JSON 日誌（stdout → Promtail → Loki）；test 環境關閉以免污染測試輸出
+    LoggerModule.forRoot({
+      pinoHttp: {
+        level: process.env.LOG_LEVEL ?? 'info',
+        autoLogging: process.env.NODE_ENV !== 'test',
+        enabled: process.env.NODE_ENV !== 'test',
+      },
+    }),
     PrismaModule,
     MenusModule,
     VendorsModule,
     HealthModule,
+    MetricsModule,
   ],
   controllers: [AppController],
   providers: [
