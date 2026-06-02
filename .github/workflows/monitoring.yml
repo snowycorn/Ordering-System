@@ -1,0 +1,64 @@
+name: Deploy Monitoring Stack (EC2-B)
+
+# 只在 monitoring 設定變更時觸發，與服務部署 (ci.yml) 互不干擾；亦可手動觸發。
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'monitoring/**'
+      - '.github/workflows/monitoring.yml'
+  workflow_dispatch:
+
+# 同一分支同時只跑一條，避免兩次 push 互相覆蓋。
+concurrency:
+  group: deploy-monitoring-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy monitoring stack to EC2-B
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_B_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_B_SSH_KEY }}
+          script: |
+            set -euo pipefail
+
+            # ── 1. 確保 Docker + compose plugin 已安裝 ───────────────────────────
+            if ! command -v docker >/dev/null 2>&1; then
+              echo "Docker 未安裝，開始安裝..."
+              curl -fsSL https://get.docker.com | sh
+              sudo usermod -aG docker ubuntu || true
+            fi
+            if ! sudo docker compose version >/dev/null 2>&1; then
+              sudo apt-get update -y
+              sudo apt-get install -y docker-compose-plugin
+            fi
+
+            # ── 2. 取得最新程式碼（沿用既有 ~/app；首次則 clone） ───────────────
+            if [ ! -d ~/app/.git ]; then
+              git clone https://github.com/${{ github.repository }}.git ~/app
+            fi
+            cd ~/app
+            git fetch origin main
+            git checkout main
+            git pull origin main
+
+            cd ~/app/monitoring
+
+            # ── 3. 啟動中央 stack（Prometheus + Loki + Grafana）─────────────────
+            #    Prometheus 的 scrape 目標走各服務私有 IP（已寫在 prometheus.yml）。
+            sudo docker compose up -d --remove-orphans
+
+            # ── 4. 啟動 PM2 版 Promtail（收 ~/.pm2/logs 的 NestJS JSON log）──────
+            sudo docker compose -f promtail/docker-compose.promtail-pm2.yml up -d --remove-orphans
+
+            # ── 5. 健康檢查 ──────────────────────────────────────────────────────
+            sleep 8
+            curl -sf http://localhost:9090/-/healthy  >/dev/null || { echo "Prometheus 未就緒"; exit 1; }
+            curl -sf http://localhost:3100/ready       >/dev/null || { echo "Loki 未就緒"; exit 1; }
+            curl -sf http://localhost:3000/api/health  >/dev/null || { echo "Grafana 未就緒"; exit 1; }
+            echo "✅ Monitoring stack 部署完成（Prometheus :9090 / Loki :3100 / Grafana :3000）"
