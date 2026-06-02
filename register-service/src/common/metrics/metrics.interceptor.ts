@@ -7,7 +7,6 @@ import {
 import { InjectMetric } from '@willsoto/nestjs-prometheus';
 import { Counter, Histogram } from 'prom-client';
 import { Observable } from 'rxjs';
-import { tap } from 'rxjs/operators';
 import { Request, Response } from 'express';
 
 /**
@@ -40,29 +39,25 @@ export class MetricsInterceptor implements NestInterceptor {
       return next.handle();
     }
 
+    const res = http.getResponse<Response>();
     const method = req.method;
     const endTimer = this.requestDuration.startTimer();
 
-    return next.handle().pipe(
-      tap({
-        next: () => this.record(http.getResponse<Response>(), method, req, endTimer),
-        error: () => this.record(http.getResponse<Response>(), method, req, endTimer),
-      }),
-    );
-  }
+    // 在 response 'finish'（exception filter 設好狀態碼、回應送出之後）才記錄，
+    // 確保 res.statusCode 是最終值；若在 RxJS pipeline 讀會早於 filter 而誤記成 200。
+    res.once('finish', () => {
+      // 路由模板優先；未匹配到路由（如 404）標 'unmatched' 以免高基數
+      const route: string =
+        (req.route as { path?: string } | undefined)?.path ?? 'unmatched';
+      const labels = {
+        method,
+        route,
+        status_code: String(res.statusCode),
+      };
+      endTimer(labels);
+      this.requestsTotal.inc(labels);
+    });
 
-  private record(
-    res: Response,
-    method: string,
-    req: Request,
-    endTimer: (labels?: Record<string, string | number>) => number,
-  ): void {
-    // 路由模板優先；未匹配到路由（如 404）標 'unmatched' 以免高基數
-    const route: string =
-      (req.route as { path?: string } | undefined)?.path ?? 'unmatched';
-    const statusCode = String(res.statusCode);
-    const labels = { method, route, status_code: statusCode };
-    endTimer(labels);
-    this.requestsTotal.inc(labels);
+    return next.handle();
   }
 }
