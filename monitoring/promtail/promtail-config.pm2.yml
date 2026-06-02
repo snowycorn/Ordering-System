@@ -1,0 +1,44 @@
+# Promtail（PM2 版）—— 給「服務以 PM2 跑、不是 Docker」的主機（例如 EC2-B 上的
+# vendor-menu / register）。tail ~/.pm2/logs/*.log（pino 輸出的 JSON）推到中央 Loki。
+#
+# 與 docker 版差別：docker 版用 docker_sd 抓容器 stdout；PM2 行程的 stdout 被 PM2
+# 寫到 log 檔，所以這裡改用 file 來源。容器以 network_mode: host 跑，故 clients.url
+# 可用 localhost 連到本機發佈的 Loki :3100。
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  # 本設定專供 EC2-B：Loki 與本機 PM2 服務同台，且容器以 network_mode: host 跑，
+  # 故用 localhost 連本機發佈的 Loki :3100。若日後 Loki 移到別台，改成該台私有 IP。
+  - url: http://localhost:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: pm2
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: pm2
+          host: ec2-b
+          # 容器內掛載點（見 docker-compose.promtail-pm2.yml）
+          __path__: /pm2-logs/*.log
+    pipeline_stages:
+      # 從檔名取服務名與 stream；container_name 對齊 docker 版 label，讓同一張
+      # Grafana 儀表板的 {container_name="vendor-menu-service"} 查詢跨主機通用。
+      - regex:
+          source: filename
+          expression: '/pm2-logs/(?P<container_name>.+)-(?P<stream>out|error)\.log'
+      - labels:
+          container_name:
+          stream:
+      # pino 為 JSON（time 為 epoch ms）；解析失敗的行會跳過此階段、不影響收集。
+      - json:
+          expressions:
+            level: level
+            time: time
+      - timestamp:
+          source: time
+          format: UnixMs

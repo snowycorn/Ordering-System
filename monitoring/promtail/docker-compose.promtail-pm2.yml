@@ -1,0 +1,16 @@
+# Promtail（PM2 版）—— 在「服務以 PM2 跑」的主機（EC2-B）部署。
+# 由 .github/workflows/monitoring.yml 自動啟動；也可手動：
+#   sudo docker compose -f docker-compose.promtail-pm2.yml up -d
+#
+# network_mode: host —— 讓容器以 localhost:3100 連到本機發佈的 Loki，且 9080 直接在 host。
+services:
+  promtail:
+    image: grafana/promtail:3.1.1
+    container_name: promtail-pm2
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./promtail-config.pm2.yml:/etc/promtail/config.yml:ro
+      # PM2 預設把各 app 的 stdout/stderr 寫到 ~/.pm2/logs/<name>-out.log / -error.log
+      - /home/ubuntu/.pm2/logs:/pm2-logs:ro
+    command: -config.file=/etc/promtail/config.yml

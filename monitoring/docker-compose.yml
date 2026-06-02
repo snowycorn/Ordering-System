@@ -1,0 +1,67 @@
+# 集中式監控 stack：Prometheus（metrics）+ Loki（logs）+ Grafana（儀表板）
+#
+# 部署位置：建議獨立一台 monitoring EC2，且與各微服務同一 VPC（security group 需放行
+# 本台對各服務 metrics port 的出向、各服務 host 對本台 :3100 的入向）。
+# 不可放本機 —— 本機連不到 172.x VPC 私有網段，抓不到任何服務。
+#
+# 啟動：docker compose up -d
+# UI：Prometheus http://<host>:9090 / Grafana http://<host>:3000 / Loki http://<host>:3100
+services:
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: monitoring-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+    ports:
+      - '9090:9090'
+    networks:
+      - monitoring
+
+  loki:
+    image: grafana/loki:3.1.1
+    container_name: monitoring-loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki-data:/loki
+    ports:
+      - '3100:3100'
+    networks:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: monitoring-grafana
+    restart: unless-stopped
+    environment:
+      # Demo 用預設帳密；正式環境請改用 secret 注入
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      # 若本台同時跑 NestJS（佔 3000），把左邊改成 3300:3000
+      - '3000:3000'
+    depends_on:
+      - prometheus
+      - loki
+    networks:
+      - monitoring
+
+volumes:
+  prometheus-data:
+  loki-data:
+  grafana-data:
+
+networks:
+  monitoring:
+    driver: bridge

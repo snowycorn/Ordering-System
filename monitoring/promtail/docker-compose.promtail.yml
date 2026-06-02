@@ -1,0 +1,17 @@
+# Promtail —— 在【每一台跑容器的 EC2 host】各跑一份（不屬於中央 monitoring stack）。
+#
+# 部署步驟（每台 host）：
+#   1. 把 promtail-config.yml 的 <monitoring-host> 改成 monitoring EC2 私有 IP
+#   2. docker compose -f docker-compose.promtail.yml up -d
+#
+# 掛載 docker.sock 與容器 log 目錄（唯讀）讓 Promtail 能發現容器並讀 log。
+services:
+  promtail:
+    image: grafana/promtail:3.1.1
+    container_name: promtail
+    restart: unless-stopped
+    volumes:
+      - ./promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    command: -config.file=/etc/promtail/config.yml

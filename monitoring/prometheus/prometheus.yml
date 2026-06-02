@@ -1,0 +1,88 @@
+# Prometheus 抓取設定
+#
+# 服務發現：本次用 static_configs（寫死私有 IP:port），與現況 Kong 寫死 IP 一致、最快上手。
+# 抓取走 VPC 內網、不經 Kong gateway（監控屬東西向基礎設施流量，不該被 JWT/限流攔截，
+# 也避免把 /metrics 暴露公網）。
+#
+# === 後續優化：改用 ec2_sd_config 自動發現（IP 變動/擴縮容免改設定）===
+# 需 monitoring EC2 掛一個能讀 EC2 的 IAM role，並給各 instance 打 tag（如 monitoring=true）。
+# 範例：
+#   - job_name: 'ordering-ec2'
+#     ec2_sd_configs:
+#       - region: ap-northeast-1
+#         filters:
+#           - name: tag:monitoring
+#             values: ['true']
+#     relabel_configs:
+#       - source_labels: [__meta_ec2_tag_Name]
+#         target_label: instance
+# ========================================================================
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # --- 我管轄的兩個 NestJS 服務（已埋點，/metrics 在服務 port 上）---
+  - job_name: 'vendor-menu'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['172.31.2.29:3007']
+        labels: { service: 'vendor-menu-service' }
+
+  - job_name: 'register'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['172.31.2.29:3008']
+        labels: { service: 'register-service' }
+
+  # --- Kong gateway（待啟用 prometheus plugin，見 INTEGRATION_GUIDE C3；未啟前 down 屬正常）---
+  - job_name: 'kong'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['127.0.0.1:8001']   # 改成 Kong host 的私有 IP:8001
+        labels: { service: 'kong-gateway' }
+
+  # --- FastAPI order-inventory（待對方加 /metrics，見 INTEGRATION_GUIDE C2；未加前 down 屬正常）---
+  - job_name: 'order-inventory'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['172.31.10.107:8081']
+        labels: { service: 'order-inventory-service' }
+
+  # --- Express x5（待各 owner 加 /metrics，見 INTEGRATION_GUIDE C1；未加前 down 屬正常）---
+  # 這幾個服務與 Kong 同主機；把 127.0.0.1 換成 Kong host 私有 IP
+  - job_name: 'iam'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['127.0.0.1:3001']
+        labels: { service: 'iam-service' }
+
+  - job_name: 'notification'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['127.0.0.1:3002']
+        labels: { service: 'notification-service' }
+
+  - job_name: 'recommendation'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['127.0.0.1:3003']
+        labels: { service: 'recommendation-service' }
+
+  - job_name: 'billing'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['127.0.0.1:3004']
+        labels: { service: 'billing-service' }
+
+  - job_name: 'appeal-admin'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['127.0.0.1:3005']
+        labels: { service: 'appeal-admin-service' }
+
+  # --- Prometheus 自身 ---
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

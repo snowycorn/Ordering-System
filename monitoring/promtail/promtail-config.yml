@@ -1,0 +1,33 @@
+# Promtail：log 收集 agent，要部署在【每一台跑 Docker 容器的 EC2 host】。
+#
+# 原理：Loki 只有中央一台、不會主動去各機器收 log；Promtail 在每台 host 透過 Docker
+# socket 發現本機容器、讀其 stdout log，打 label 後 push 到中央 Loki。
+#
+# 同台主機的服務「自動」被收，owner 不用改任何 code；跨主機（別人的 EC2）需該 owner
+# 自行起一支 Promtail（見 INTEGRATION_GUIDE C5）。
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  # 改成 monitoring EC2 的私有 IP
+  - url: http://<monitoring-host>:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 15s
+    relabel_configs:
+      # container_name（去掉開頭的 /），之後 Grafana 用 {container_name="vendor-menu-service"} 查
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: 'container_name'
+      # compose 專案名，方便分組
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_project']
+        target_label: 'compose_project'
+      - source_labels: ['__meta_docker_container_log_stream']
+        target_label: 'stream'
