@@ -76,6 +76,9 @@ jobs:
               echo "❌ $name 未就緒（等待逾時）"; return 1
             }
             wait_ready Prometheus http://localhost:9090/-/healthy || exit 1
+            # 熱重載 Prometheus 設定：docker compose up -d 不會重建「只有掛載檔案變」的
+            # 容器，故 scrape target 改動需主動 reload（graceful、不中斷、不丟 TSDB）。
+            curl -sf -X POST http://localhost:9090/-/reload && echo "✅ Prometheus 設定已重載"
             wait_ready Loki       http://localhost:3100/ready     || exit 1
             wait_ready Grafana    http://localhost:3000/api/health || exit 1
             echo "✅ Monitoring stack 部署完成（Prometheus :9090 / Loki :3100 / Grafana :3000）"

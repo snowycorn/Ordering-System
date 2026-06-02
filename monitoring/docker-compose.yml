@@ -20,6 +20,8 @@ services:
       # 時間/容量任一先到就刪舊資料（EC2-B 磁碟小，避免撐爆）
       - '--storage.tsdb.retention.time=3d'
       - '--storage.tsdb.retention.size=512MB'
+      # 開啟 /-/reload API，讓部署後可熱重載設定（改 scrape target 免重啟容器）
+      - '--web.enable-lifecycle'
     ports:
       - '9090:9090'
     logging:
