@@ -52,9 +52,9 @@ docker compose up -d
 ```
 
 UI：
-- Prometheus `http://<monitoring-host>:9090`（`/targets` 看抓取狀態）
-- Grafana `http://<monitoring-host>:3000`（預設 admin / admin；已自動佈建 datasources 與 "Ordering System Overview" 儀表板）
-- Loki `http://<monitoring-host>:3100/ready`
+- Prometheus `http://54.252.173.148:9090`（`/targets` 看抓取狀態）
+- Grafana `http://54.252.173.148:3000`（預設 admin / admin；已自動佈建 datasources 與 "Ordering System Overview" 儀表板）
+- Loki `http://54.252.173.148:3100/ready`
 
 > 若 monitoring EC2 同時也跑 NestJS（佔 3000），把 `docker-compose.yml` 的 grafana port 改成 `3300:3000`。
 

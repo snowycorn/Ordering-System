@@ -40,7 +40,7 @@ scrape_configs:
   - job_name: 'kong'
     metrics_path: /metrics
     static_configs:
-      - targets: ['127.0.0.1:8001']   # 改成 Kong host 的私有 IP:8001
+      - targets: ['172.31.6.25:8001']   # Kong host 私有 IP
         labels: { service: 'kong-gateway' }
 
   # --- FastAPI order-inventory（待對方加 /metrics，見 INTEGRATION_GUIDE C2；未加前 down 屬正常）---
@@ -51,35 +51,35 @@ scrape_configs:
         labels: { service: 'order-inventory-service' }
 
   # --- Express x5（待各 owner 加 /metrics，見 INTEGRATION_GUIDE C1；未加前 down 屬正常）---
-  # 這幾個服務與 Kong 同主機；把 127.0.0.1 換成 Kong host 私有 IP
+  # 這幾個服務與 Kong 同主機（172.31.6.25）
   - job_name: 'iam'
     metrics_path: /metrics
     static_configs:
-      - targets: ['127.0.0.1:3001']
+      - targets: ['172.31.6.25:3001']
         labels: { service: 'iam-service' }
 
   - job_name: 'notification'
     metrics_path: /metrics
     static_configs:
-      - targets: ['127.0.0.1:3002']
+      - targets: ['172.31.6.25:3002']
         labels: { service: 'notification-service' }
 
   - job_name: 'recommendation'
     metrics_path: /metrics
     static_configs:
-      - targets: ['127.0.0.1:3003']
+      - targets: ['172.31.6.25:3003']
         labels: { service: 'recommendation-service' }
 
   - job_name: 'billing'
     metrics_path: /metrics
     static_configs:
-      - targets: ['127.0.0.1:3004']
+      - targets: ['172.31.6.25:3004']
         labels: { service: 'billing-service' }
 
   - job_name: 'appeal-admin'
     metrics_path: /metrics
     static_configs:
-      - targets: ['127.0.0.1:3005']
+      - targets: ['172.31.6.25:3005']
         labels: { service: 'appeal-admin-service' }
 
   # --- Prometheus 自身 ---

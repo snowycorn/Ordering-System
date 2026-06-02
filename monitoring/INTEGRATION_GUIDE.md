@@ -1,18 +1,22 @@
 # 監控接入指引（給各服務 owner）
 
-我建了一套集中監控（Prometheus + Loki + Grafana，跑在 `<monitoring-EC2-IP>`）。
+我建了一套集中監控（Prometheus + Loki + Grafana，跑在 **EC2-B，私有 IP `172.31.2.29`**）。
 本文件說明**你的服務最少要做什麼**才能被監控到。`vendor-menu` 與 `register`（NestJS）已完成，
 以下針對其餘服務。
+
+> ⚠️ **一律用私有 IP `172.31.2.29`**：所有對監控的連線（被抓 metrics、push log 到 Loki）都走 **VPC 內網**。
+> **不要**用公網 IP `54.252.173.148` —— 那會繞外網、要對公網開 security group、不安全也可能計費。
 
 ## 共通約定
 
 - **Metrics 端點**：你的服務暴露 `GET /metrics`（Prometheus 文字格式），**走 VPC 內網**被抓，不經 Kong。
+- **`/metrics` 必須綁 `0.0.0.0`（VPC 可達）**，不要只綁 `127.0.0.1`/`localhost` —— 監控在另一台 EC2（`172.31.2.29`），綁 localhost 會抓不到。Express 預設 `app.listen(port)` 即綁 `0.0.0.0`，但若你有指定 host 請確認。
 - **Metric 命名統一**（方便共用儀表板）：
   - `http_requests_total`（counter）labels：`method`、`route`、`status_code`
   - `http_request_duration_seconds`（histogram）同上 labels
   - `route` 用**模板路徑**（如 `/orders/:id`）而非實際 id，避免高基數爆量。
 - **Logs**：輸出 **JSON 到 stdout**（讓 Loki 好解析），不要自己寫檔。
-- **網路**：確認 security group 允許 monitoring EC2 抓你的 metrics port（入向）、你那台能對 monitoring `:3100` 出向。
+- **網路**：security group 需放行 monitoring EC2（`172.31.2.29`）→ 你的 metrics port **入向**；你的 host → `172.31.2.29:3100`（Loki）**出向**。
 - 把你服務的**私有 `IP:port`** 給我，我加進 [`prometheus/prometheus.yml`](prometheus/prometheus.yml) 的 scrape 清單。
 
 ---
@@ -119,13 +123,13 @@ Kong 會在 Admin API（通常 `:8001`）暴露 `/metrics`。Prometheus 的 `kon
 
 ---
 
-## C5. 部署 Promtail 收集你那台 host 的 log
+## C4. 部署 Promtail 收集你那台 host 的 log
 
 若你的服務跑在**獨立 EC2**（如 order-inventory 的 `172.31.10.107`），請在那台跑一支 Promtail：
 
 ```bash
 # 取得 monitoring/promtail/ 下的兩個檔，編輯 promtail-config.yml：
-#   clients.url -> http://<monitoring-EC2-IP>:3100/loki/api/v1/push
+#   clients.url -> http://172.31.2.29:3100/loki/api/v1/push   # 私有 IP，勿用公網
 docker compose -f docker-compose.promtail.yml up -d
 ```
 
