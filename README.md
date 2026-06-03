@@ -1,21 +1,99 @@
-# Ordering-System
-## Background
-為了解決員工長期於廠內駐點餐廳用餐，而產生用餐疲勞的問題。公司計畫額外引入外部商家提供的外送服務，豐富員工的用餐選擇。然而，幾萬
-人的公司若手動管理外部訂單，將面臨：餐廳資訊混亂、份數統計出錯、領餐現場失控等管理困境。本系統旨在提供一個自動化平台，讓外部商家
-能自主管理菜單與供應量，並讓員工得以提前預購餐點。
+# Ordering System
 
-## Target Audiance
-- 員工：厭倦員餐、想提前規劃一週午餐，並在指定地點領取外送美食的人。
-- 合作商家：能自行更新菜單、設定每日最大供應份數（限量），並根據匯總單據進行備餐與配送的人。
-- 福委會管理員：負責審核外部商家入駐，並透過系統自動對帳扣款，不需介入每日訂單細節。
+Ordering System 是企業餐點訂購平台的 monorepo，包含後端微服務、前端 Next.js 介面，以及監控設定。
 
-## System Requirement
-- 商家自助管理後台：提供商家管理菜單、價格、照片與每日供應量的自動化介面。
-- 員工預購與管理系統：員工能進行未來 7 天的預購，並查看訂單紀錄。
-- 領餐與分流機制：系統自動產生標準化配送標籤供商家使用，並透過員工識別證實現快速領餐確認。
-- 餐點推薦：整合外部環境 (如天氣) 與內部數據 (如銷量、營養)，提供多樣化的推薦機制。學生可自由設計呈現方式 (如搜尋優化、專區推薦)，並自主決定採用 AI 模型或 Rule-based 的方式。
+## 專案結構
 
-## Advanced Requirement
-- 自動化結帳流程：每月自動匯出商家應收帳款報表，與公司現有薪資扣款系統整合。
-- 福委會管理後台：提供福委會人員審核新商家加入的機制，並監控整體訂餐數據與營運狀況。
-- 多廠區商家管理：福委會可以在後台設定商家所能服務的廠區。員工訂餐時，系統會自動根據他的廠區顯示專屬菜單，避免點到無法送達的店家。
+```text
+.
+├── frontend/              # Next.js frontend / BFF
+├── register-service/      # NestJS 註冊申請服務
+├── vendor-menu-service/   # NestJS 廠商與菜單服務
+├── monitoring/            # Prometheus / Grafana / Loki / Promtail
+└── .github/workflows/     # GitHub Actions CI/CD
+```
+
+## 服務說明
+
+| 路徑 | 說明 |
+| --- | --- |
+| `frontend/` | 員工、廠商、管理委員會三種角色的 Web UI，並提供 Next.js BFF API routes。 |
+| `register-service/` | 處理註冊申請、申請審核、S3 上傳 URL、IAM 與 Vendor Menu service integration。 |
+| `vendor-menu-service/` | 處理廠商資料、菜單、庫存同步、廠區、廠商停權與公開菜單查詢。 |
+| `monitoring/` | 監控與日誌收集設定。 |
+
+## Frontend
+
+安裝與啟動：
+
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+常用檢查：
+
+```bash
+cd frontend
+npm run lint
+npm run test:coverage -- --runInBand
+npm run build
+```
+
+Frontend unit coverage 目前由 Jest threshold 保護，目標為全域 80% 以上：
+
+- Statements: 90%+
+- Branches: 80%+
+- Functions: 90%+
+- Lines: 90%+
+
+詳細前端文件請看 `frontend/README.md`。
+
+## Backend Services
+
+### register-service
+
+```bash
+cd register-service
+npm ci
+npx prisma generate
+npm test
+npm run build
+```
+
+### vendor-menu-service
+
+```bash
+cd vendor-menu-service
+npm ci
+npx prisma generate
+npm test
+npm run build
+```
+
+各服務需要的資料庫、S3、IAM 或其他 integration URL，請參考各服務資料夾內的 README 與 GitHub Actions workflow。
+
+## GitHub Actions
+
+目前有兩組主要 workflow：
+
+| Workflow | 觸發條件 | 內容 |
+| --- | --- | --- |
+| `.github/workflows/ci.yml` | `register-service/**`、`vendor-menu-service/**` 或 workflow 變更 push 到 `main` | 後端服務測試與 EC2-B deploy。 |
+| `.github/workflows/frontend-ci.yml` | `frontend/**` 或 workflow 變更 push / PR 到 `main` | Frontend lint、unit coverage、Next.js build。 |
+
+Frontend CI 會執行：
+
+```bash
+npm ci
+npm run lint
+npm run test:coverage -- --runInBand
+npm run build
+```
+
+## 部署
+
+後端部署流程目前保留在 `.github/workflows/ci.yml`，會透過 SSH 更新 EC2-B 上的 `vendor-menu-service` 和 `register-service`。
+
+前端目前已整合到 repo，CI 會先確保 lint、coverage 與 build 通過。若要讓前端也自動部署，可在 `frontend-ci.yml` 後續新增 Docker build/push 或 SSH deploy job。

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: employee-frontend
+  labels:
+    app: employee-frontend
+spec:
+  type: ClusterIP
+  selector:
+    app: employee-frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
