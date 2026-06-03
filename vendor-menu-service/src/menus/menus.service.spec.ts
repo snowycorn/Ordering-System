@@ -230,7 +230,7 @@ describe('MenusService', () => {
         where: { vendorId: 'vendor-1', isActive: true },
         select: { id: true },
       });
-      // 每筆 active 菜單在視窗 7 天都被歸零
+      // 每筆 active 菜單在視窗 9 天都被歸零
       expect(mockOrderInventory.setInventory).toHaveBeenCalledWith('m1', expect.any(String), 0);
       expect(mockOrderInventory.setInventory).toHaveBeenCalledWith('m2', expect.any(String), 0);
       // menu.update 不應被呼叫（不改 isActive）

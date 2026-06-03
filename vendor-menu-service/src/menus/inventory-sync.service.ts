@@ -5,11 +5,12 @@ import { PrismaService } from '../prisma/prisma.service';
 import { OrderInventoryClient } from '../integrations/order-inventory.client';
 
 // 與 MenusService 一致的滾動視窗天數
-const BOOKING_WINDOW_DAYS = 7;
+const BOOKING_WINDOW_DAYS = 9;
 
 /**
- * 每日庫存推進 cron：維持「未來 7 天」的滾動視窗。
- * 建立菜單時已種 D0..D+6；每天凌晨把新的邊界日 D+6 種給 order-inventory。
+ * 每日庫存推進 cron：維持「未來 9 天」的滾動視窗。
+ * 建立菜單時已種 D0..D+8；每天 23:00 把新的邊界日 D+8 種給 order-inventory。
+ * 多 1 天緩衝 + 午夜前推進：午夜後前端視窗翻新時，最遠日已在前一晚種好，避免時間競態。
  */
 @Injectable()
 export class InventorySyncService {
@@ -20,9 +21,9 @@ export class InventorySyncService {
     private readonly orderInventory: OrderInventoryClient,
   ) {}
 
-  @Cron('0 1 * * *', { timeZone: 'Asia/Taipei' })
+  @Cron('0 23 * * *', { timeZone: 'Asia/Taipei' })
   async pushRollingBoundary(): Promise<void> {
-    // 計算邊界日 D+6（Asia/Taipei today 加 BOOKING_WINDOW_DAYS-1 天）
+    // 計算邊界日 D+8（Asia/Taipei today 加 BOOKING_WINDOW_DAYS-1 天）
     const today = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Taipei' }).split(' ')[0];
     const boundary = new Date(`${today}T00:00:00Z`);
     boundary.setUTCDate(boundary.getUTCDate() + BOOKING_WINDOW_DAYS - 1);

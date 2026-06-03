@@ -6,8 +6,8 @@ import { CreateMenuDto } from './dto/create-menu.dto';
 import { UpdateMenuDto } from './dto/update-menu.dto';
 import { SetDailyQuotaDto } from './dto/set-daily-quota.dto';
 
-// 訂單可預訂的滾動視窗天數：今天(D0) 起算共 7 天，最遠到 D+6
-const BOOKING_WINDOW_DAYS = 7;
+// 訂單可預訂的滾動視窗天數：今天(D0) 起算共 9 天，最遠到 D+8（含 1 天緩衝，配合 23:00 cron 避免午夜競態）
+const BOOKING_WINDOW_DAYS = 9;
 
 @Injectable()
 export class MenusService {
@@ -55,13 +55,13 @@ export class MenusService {
     }
   }
 
-  /** 把視窗內（今天 D0..D+6）整段重推給 order-inventory（依菜單目前有效上限）。 */
+  /** 把視窗內（今天 D0..D+8）整段重推給 order-inventory（依菜單目前有效上限）。 */
   private async pushBookingWindow(menuId: string, dailyLimit: number): Promise<void> {
     const today = this.todayStr();
     await this.pushInventoryRange(menuId, dailyLimit, today, this.addDays(today, BOOKING_WINDOW_DAYS - 1));
   }
 
-  /** 把視窗內（今天 D0..D+6）的庫存全部歸零（菜單下架時呼叫，強制 order-inventory 額度歸零）。 */
+  /** 把視窗內（今天 D0..D+8）的庫存全部歸零（菜單下架時呼叫，強制 order-inventory 額度歸零）。 */
   private async zeroBookingWindow(menuId: string): Promise<void> {
     const today = this.todayStr();
     const end = this.addDays(today, BOOKING_WINDOW_DAYS - 1);
@@ -78,7 +78,7 @@ export class MenusService {
       },
     });
 
-    // 種未來 7 天（D0..D+6）的庫存到 order-inventory，讓員工可立即下單
+    // 種未來 9 天（D0..D+8）的庫存到 order-inventory，讓員工可立即下單
     await this.pushBookingWindow(menu.id, menu.dailyLimit);
 
     return menu;
@@ -145,7 +145,7 @@ export class MenusService {
       data: { isActive: false },
     });
 
-    // 強制把 order-inventory 視窗內（今天 D0..D+6）額度歸零，避免下架後仍可被下單
+    // 強制把 order-inventory 視窗內（今天 D0..D+8）額度歸零，避免下架後仍可被下單
     await this.zeroBookingWindow(menuId);
 
     return removed;
@@ -192,7 +192,7 @@ export class MenusService {
     });
 
     // quota 影響「targetDate 當天起、之後所有日期」的有效上限，
-    // 即時重推視窗內受影響的日期（從 targetDate 或今天起，到 D+6 邊界）。
+    // 即時重推視窗內受影響的日期（從 targetDate 或今天起，到 D+8 邊界）。
     const windowEnd = this.addDays(today, BOOKING_WINDOW_DAYS - 1);
     const repushFrom = dto.targetDate > today ? dto.targetDate : today;
     if (repushFrom <= windowEnd) {
