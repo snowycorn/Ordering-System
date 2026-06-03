@@ -19,7 +19,7 @@ vendor-menu-service
 ├── /api/v1/menus/tags           # 菜單標籤選項清單（tag 詞彙單一真實來源）
 ├── /api/v1/vendors/me           # 商家自身資料管理（需 x-user-id header）
 ├── /api/v1/vendors/me/menus     # 商家菜單 CRUD 與每日限量管理
-├── /api/v1/admin/vendors        # 管理員：建立、查詢、修改、停權/復權商家（需 x-user-role: admin）
+├── /api/v1/admin/vendors        # 管理員：建立、列出、查詢、修改、停權/復權商家（需 x-user-role: admin）
 └── /health                      # K8s Liveness/Readiness Probe
 ```
 
@@ -151,6 +151,7 @@ docker-compose down -v
 | Method | Path | 說明 |
 |---|---|---|
 | `POST` | `/api/v1/admin/vendors` | **建立新商家帳號**（僅管理員可用，回傳 201） |
+| `GET` | `/api/v1/admin/vendors` | **列出所有商家**（含 SUSPENDED，回完整管理欄位）；可選 `?status=ACTIVE\|SUSPENDED`、`?factoryZone=` 過濾 |
 | `GET` | `/api/v1/admin/vendors/:id` | 查詢指定商家（含敏感管理欄位） |
 | `PUT` | `/api/v1/admin/vendors/:id` | 更新指定商家 profile（name / category / description / factoryZones）；`factoryZones`（服務廠區，限 `GET /api/v1/vendors/factory-zones` 清單內值）僅能由管理員於此變更，`status` 不可由此變更 |
 | `POST` | `/api/v1/admin/vendors/:id/violation-points` | 違規點數 +1（每次呼叫累加 1，回傳 200） |

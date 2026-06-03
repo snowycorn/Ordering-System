@@ -5,6 +5,7 @@ import {
   Put,
   Body,
   Param,
+  Query,
   HttpCode,
   HttpStatus,
   UsePipes,
@@ -13,6 +14,7 @@ import {
 import { VendorsService } from '../vendors.service';
 import { CreateVendorDto } from '../dto/create-vendor.dto';
 import { AdminUpdateVendorDto } from '../dto/admin-update-vendor.dto';
+import { AdminListVendorsQueryDto } from '../dto/admin-list-vendors-query.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 
 /**
@@ -35,6 +37,15 @@ export class AdminVendorsController {
   @HttpCode(HttpStatus.CREATED)
   async create(@Body() createVendorDto: CreateVendorDto) {
     return this.vendorsService.create(createVendorDto);
+  }
+
+  /**
+   * GET /api/v1/admin/vendors
+   * 列出所有商家（含 SUSPENDED、含管理欄位）。可選 ?status、?factoryZone 過濾。
+   */
+  @Get()
+  async findAll(@Query() query: AdminListVendorsQueryDto) {
+    return this.vendorsService.findAllForAdmin(query.status, query.factoryZone);
   }
 
   /**

@@ -11,6 +11,7 @@ describe('AdminVendorsController', () => {
   const mockVendorsService = {
     create: jest.fn(),
     findOne: jest.fn(),
+    findAllForAdmin: jest.fn(),
     update: jest.fn(),
     addViolationPoint: jest.fn(),
   };
@@ -33,6 +34,20 @@ describe('AdminVendorsController', () => {
       mockVendorsService.create.mockResolvedValue({});
       await controller.create(dto);
       expect(service.create).toHaveBeenCalledWith(dto);
+    });
+  });
+
+  describe('findAll', () => {
+    it('should call vendorsService.findAllForAdmin with status and factoryZone', async () => {
+      mockVendorsService.findAllForAdmin.mockResolvedValue([]);
+      await controller.findAll({ status: 'SUSPENDED', factoryZone: 'A廠' });
+      expect(service.findAllForAdmin).toHaveBeenCalledWith('SUSPENDED', 'A廠');
+    });
+
+    it('should pass undefined filters when query is empty', async () => {
+      mockVendorsService.findAllForAdmin.mockResolvedValue([]);
+      await controller.findAll({});
+      expect(service.findAllForAdmin).toHaveBeenCalledWith(undefined, undefined);
     });
   });
 

@@ -131,6 +131,20 @@ export class VendorsService {
     });
   }
 
+  /**
+   * 列出所有商家（管理員專用）。回傳完整欄位（含 violationPoints / 停權稽核欄）。
+   * status 不傳則回全部（含 SUSPENDED）；可選依 factoryZone 過濾。
+   */
+  async findAllForAdmin(status?: string, factoryZone?: string) {
+    return this.prisma.vendor.findMany({
+      where: {
+        ...(status ? { status } : {}),
+        ...(factoryZone ? { factoryZones: { has: factoryZone } } : {}),
+      },
+      orderBy: { name: 'asc' },
+    });
+  }
+
   // ---- 公開查詢（員工用）----
 
   /**

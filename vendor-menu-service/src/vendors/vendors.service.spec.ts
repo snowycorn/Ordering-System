@@ -210,6 +210,54 @@ describe('VendorsService', () => {
     });
   });
 
+  describe('findAllForAdmin', () => {
+    it('should list all vendors with no filter (empty where, no select)', async () => {
+      mockPrismaService.vendor.findMany.mockResolvedValue([]);
+
+      await service.findAllForAdmin();
+
+      expect(prisma.vendor.findMany).toHaveBeenCalledWith({
+        where: {},
+        orderBy: { name: 'asc' },
+      });
+      const callArg = mockPrismaService.vendor.findMany.mock.calls[0][0];
+      expect(callArg.select).toBeUndefined();
+    });
+
+    it('should filter by status when provided', async () => {
+      mockPrismaService.vendor.findMany.mockResolvedValue([]);
+
+      await service.findAllForAdmin('SUSPENDED');
+
+      expect(prisma.vendor.findMany).toHaveBeenCalledWith({
+        where: { status: 'SUSPENDED' },
+        orderBy: { name: 'asc' },
+      });
+    });
+
+    it('should filter by factoryZone when provided', async () => {
+      mockPrismaService.vendor.findMany.mockResolvedValue([]);
+
+      await service.findAllForAdmin(undefined, 'Zone A');
+
+      expect(prisma.vendor.findMany).toHaveBeenCalledWith({
+        where: { factoryZones: { has: 'Zone A' } },
+        orderBy: { name: 'asc' },
+      });
+    });
+
+    it('should combine status and factoryZone filters', async () => {
+      mockPrismaService.vendor.findMany.mockResolvedValue([]);
+
+      await service.findAllForAdmin('ACTIVE', 'Zone A');
+
+      expect(prisma.vendor.findMany).toHaveBeenCalledWith({
+        where: { status: 'ACTIVE', factoryZones: { has: 'Zone A' } },
+        orderBy: { name: 'asc' },
+      });
+    });
+  });
+
   describe('findVendorMenus', () => {
     it('should map todayMaxQuantity correctly when dailyQuotas exist', async () => {
       // Mock vendor existence
