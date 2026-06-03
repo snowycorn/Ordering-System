@@ -1,0 +1,29 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+reports/*.html
+reports/coverage.xml
+reports/coverage/
+.venv/
+.env
+.vscode/
+# Local secrets and infra config - don't commit
+kong.yml
+test.pem
+# Python
+venv/
+env/
+
+# Environment variables
+.env.*
+!.env.example
+
+# Reports / test outputs
+reports/
+htmlcov/
+.coverage
+.pytest_cache/
+
+# Docker / logs
+*.log
