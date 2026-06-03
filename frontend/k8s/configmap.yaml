@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: employee-frontend-config
+data:
+  AUTH_COOKIE_NAME: token
+  AUTH_ROLE_COOKIE_NAME: role
+  USE_LOCAL_MOCKS: "false"
+  IAM_URL: http://140.113.62.166:3001
+  NOTIFICATION_URL: http://140.113.62.166:3002
+  RECOMMENDATION_URL: http://140.113.62.166:3003
+  BILLING_URL: http://140.113.62.166:3004
+  APPEAL_URL: http://140.113.62.166:3005
+  IAM_LOGIN_PATH: /auth/login
+  IAM_USERS_PATH: /users
+  IAM_EMPLOYEES_PATH: /employees
+  NOTIFICATION_BY_USER_PATH: /notifications/user/:id
+  NOTIFICATION_MARK_READ_PATH: /user/:id/read
+  RECOMMENDATION_CACHE_PATH: /cache
+  RECOMMENDATION_CACHE_BY_USER_PATH: /cache/user/:id
+  BILLING_STATEMENTS_PATH: /billing/statements
+  BILLING_INCIDENTS_PATH: /billing/incidents
+  APPEAL_COLLECTION_PATH: /appeals

@@ -1,0 +1,222 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f4f4f2;
+  --foreground: #00113a;
+  --surface: #ffffff;
+  --surface-muted: #f7f9fc;
+  --line: #d7e0ed;
+
+  --navy-50: #e8eef7;
+  --navy-100: #b3c6e0;
+  --navy-400: #4a7fb5;
+  --navy-600: #003d82;
+  --navy-800: #002055;
+  --navy-900: #00113a;
+
+  --teal-50: #e0f4f8;
+  --teal-200: #7bd0e0;
+  --teal-400: #009bb5;
+  --teal-600: #006b7d;
+
+  --success-bg: #eaf4e8;
+  --success-fg: #27713a;
+  --warning-bg: #fff3e0;
+  --warning-fg: #9b5c00;
+  --error-bg: #fdebeb;
+  --error-fg: #b4232f;
+  --neutral-bg: #f4f4f2;
+
+
+  /* 福委會專用咖啡色系 */
+  --admin-coffee-50: #faf6f2;
+  --admin-coffee-100: #ede4d8;
+  --admin-coffee-400: #a47551;
+  --admin-coffee-600: #7b5535;
+  --admin-coffee-700: #5c3d24;
+  --admin-coffee-900: #3a2616;
+
+  /* 商家專用灰色系 */
+  --vendor-gray-50: #f5f5f5;
+  --vendor-gray-100: #e7e7e7;
+  --vendor-gray-400: #737373;
+  --vendor-gray-600: #525252;
+  --vendor-gray-700: #404040;
+  --vendor-gray-900: #1f1f1f;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background: var(--background);
+}
+
+body {
+  min-height: 100%;
+  background:
+    radial-gradient(circle at 15% 10%, rgba(123, 208, 224, 0.18), transparent 30%),
+    linear-gradient(180deg, #f8fafc 0%, var(--neutral-bg) 100%);
+  color: var(--foreground);
+  font-family:
+    Arial,
+    "Microsoft JhengHei",
+    "PingFang TC",
+    system-ui,
+    sans-serif;
+}
+
+::selection {
+  background: var(--teal-200);
+  color: var(--navy-900);
+}
+
+a,
+button,
+input,
+select,
+textarea {
+  letter-spacing: 0;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+.portal-shell {
+  position: relative;
+  isolation: isolate;
+  min-height: 100vh;
+  overflow: hidden;
+  background-image:
+    linear-gradient(105deg, rgba(0, 17, 58, 0.92) 0%, rgba(0, 32, 85, 0.78) 44%, rgba(232, 238, 247, 0.88) 100%),
+    url("/tsmc-bg.jpg");
+  background-position: center;
+  background-size: cover;
+}
+
+.portal-shell::before {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  content: "";
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(0, 107, 125, 0.1));
+  backdrop-filter: saturate(0.72);
+}
+
+.portal-shell::after {
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 0;
+  height: 42%;
+  content: "";
+  background:
+    linear-gradient(90deg, transparent 0 14px, rgba(123, 208, 224, 0.18) 14px 15px, transparent 15px 32px),
+    linear-gradient(180deg, transparent, rgba(0, 107, 125, 0.2));
+  mask-image: linear-gradient(to top, black, transparent);
+  opacity: 0.55;
+  animation: scan-drift 9s ease-in-out infinite alternate;
+}
+
+.portal-shell > * {
+  position: relative;
+  z-index: 1;
+}
+
+.glass-panel {
+  border: 1px solid rgba(179, 198, 224, 0.38);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 24px 70px rgba(0, 17, 58, 0.16);
+  backdrop-filter: blur(18px);
+}
+
+.surface-panel {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 16px 38px rgba(0, 32, 85, 0.08);
+}
+
+.motion-fade-up {
+  animation: fade-up 0.72s ease-out both;
+}
+
+.motion-fade-up-delay {
+  animation: fade-up 0.72s ease-out 0.12s both;
+}
+
+.motion-float {
+  animation: float-soft 5.6s ease-in-out infinite;
+}
+
+.motion-sweep {
+  position: relative;
+  overflow: hidden;
+}
+
+.motion-sweep > * {
+  position: relative;
+  z-index: 1;
+}
+
+.motion-sweep::after {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  content: "";
+  background: linear-gradient(115deg, transparent 0 32%, rgba(255, 255, 255, 0.34) 48%, transparent 64%);
+  transform: translateX(-120%);
+  animation: sweep 4.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes float-soft {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes sweep {
+  0%,
+  45% {
+    transform: translateX(-120%);
+  }
+  72%,
+  100% {
+    transform: translateX(120%);
+  }
+}
+
+@keyframes scan-drift {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(18px);
+  }
+}
