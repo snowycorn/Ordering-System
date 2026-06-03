@@ -55,11 +55,31 @@ export class S3Service {
   }
 
   /**
-   * 為菜單圖片產生一個 pre-signed PUT URL。
+   * 為菜單圖片產生一個 pre-signed PUT URL（key 前綴 menu-images/）。
+   */
+  async generateMenuImageUploadUrl(
+    vendorId: string,
+    contentType: string,
+  ): Promise<UploadUrlResult> {
+    return this.generateImageUploadUrl('menu-images', vendorId, contentType);
+  }
+
+  /**
+   * 為商家圖片產生一個 pre-signed PUT URL（key 前綴 vendor-images/）。
+   */
+  async generateVendorImageUploadUrl(
+    vendorId: string,
+    contentType: string,
+  ): Promise<UploadUrlResult> {
+    return this.generateImageUploadUrl('vendor-images', vendorId, contentType);
+  }
+
+  /**
+   * 共用的圖片 pre-signed PUT URL 產生器。
    *
    * 流程說明：
    * 1. 後端驗證 contentType 是否合法
-   * 2. 生成唯一的 S3 Object Key（menu-images/{vendorId}/{uuid}.ext）
+   * 2. 生成唯一的 S3 Object Key（{keyPrefix}/{vendorId}/{uuid}.ext）
    * 3. 向 AWS 申請一個有時效的 pre-signed URL，讓前端可以直接 PUT 圖片到 S3
    * 4. 回傳 uploadUrl（前端上傳用）和 imageUrl（存入 DB 用）
    *
@@ -68,7 +88,8 @@ export class S3Service {
    * - pre-signed URL 有時效（5 分鐘），過期自動失效
    * - S3 Bucket Policy 設為 Public Read，imageUrl 可直接被 CDN 快取
    */
-  async generateMenuImageUploadUrl(
+  private async generateImageUploadUrl(
+    keyPrefix: string,
     vendorId: string,
     contentType: string,
   ): Promise<UploadUrlResult> {
@@ -80,7 +101,7 @@ export class S3Service {
     }
 
     // 用 UUID 確保每次 key 唯一，不會覆蓋舊圖片
-    const objectKey = `menu-images/${vendorId}/${randomUUID()}${ext}`;
+    const objectKey = `${keyPrefix}/${vendorId}/${randomUUID()}${ext}`;
 
     // PutObjectCommand：定義這個 pre-signed URL 允許做什麼操作
     // ContentType 限制只能上傳指定格式，防止前端上傳非圖片檔

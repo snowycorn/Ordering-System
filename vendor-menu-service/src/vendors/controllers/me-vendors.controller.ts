@@ -4,12 +4,16 @@ import {
   Put,
   Body,
   Headers,
+  Query,
   UseGuards,
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { VendorsService } from '../vendors.service';
+import { S3Service } from '../../s3/s3.service';
 import { UpdateVendorDto } from '../dto/update-vendor.dto';
+import { GetUploadUrlDto } from '../../menus/dto/get-upload-url.dto';
 import { parseXUserId } from '../../common/parse-x-user-id';
 import { ActiveVendorGuard } from '../../common/guards/active-vendor.guard';
 
@@ -21,7 +25,10 @@ import { ActiveVendorGuard } from '../../common/guards/active-vendor.guard';
 @Controller('api/v1/vendors/me')
 @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
 export class MeVendorsController {
-  constructor(private readonly vendorsService: VendorsService) {}
+  constructor(
+    private readonly vendorsService: VendorsService,
+    private readonly s3Service: S3Service,
+  ) {}
 
   /**
    * GET /api/v1/vendors/me
@@ -30,6 +37,31 @@ export class MeVendorsController {
   @Get()
   async getMyProfile(@Headers('x-user-id') xUserId: string) {
     return this.vendorsService.findByUserId(parseXUserId(xUserId));
+  }
+
+  /**
+   * GET /api/v1/vendors/me/upload-image-url?contentType=image/jpeg
+   *
+   * 商家圖片上傳流程（比照菜單圖片）：
+   * 1. 前端帶 contentType 呼叫此端點
+   * 2. 後端回傳有效期 5 分鐘的 pre-signed PUT URL（uploadUrl）與最終 imageUrl
+   * 3. 前端直接 PUT 圖片到 uploadUrl（圖片不經過後端）
+   * 4. 前端用 PUT /api/v1/vendors/me 帶 imageUrl 存入商家資料
+   */
+  @Get('upload-image-url')
+  @UseGuards(ActiveVendorGuard)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  async getUploadImageUrl(
+    @Headers('x-user-id') xUserId: string,
+    @Query() query: GetUploadUrlDto,
+  ) {
+    const vendor = await this.vendorsService.findByUserId(
+      parseXUserId(xUserId),
+    );
+    return this.s3Service.generateVendorImageUploadUrl(
+      vendor.id,
+      query.contentType,
+    );
   }
 
   /**

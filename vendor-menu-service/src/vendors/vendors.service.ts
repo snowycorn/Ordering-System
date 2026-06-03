@@ -149,6 +149,7 @@ export class VendorsService {
         name: true,
         category: true,
         description: true,
+        imageUrl: true,
         factoryZones: true,
         status: true,
       },

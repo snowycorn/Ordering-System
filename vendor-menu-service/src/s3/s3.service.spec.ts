@@ -139,6 +139,45 @@ describe('S3Service', () => {
   });
 
   // ----------------------------------------------------------------
+  // 商家圖片（vendor-images/ 前綴）
+  // ----------------------------------------------------------------
+  describe('generateVendorImageUploadUrl', () => {
+    it('object key 應以 vendor-images/{vendorId}/ 為前綴', async () => {
+      const service = await createService();
+      await service.generateVendorImageUploadUrl(VENDOR_ID, 'image/png');
+
+      const { PutObjectCommand } = jest.requireMock('@aws-sdk/client-s3');
+      const callArg = PutObjectCommand.mock.calls.at(-1)[0];
+
+      expect(callArg.Key).toMatch(
+        new RegExp(`^vendor-images/${VENDOR_ID}/[0-9a-f-]{36}\\.png$`),
+      );
+      expect(callArg.ContentType).toBe('image/png');
+    });
+
+    it('應回傳含 vendor-images 路徑的 imageUrl 與 expiresIn=300', async () => {
+      const service = await createService();
+      const result = await service.generateVendorImageUploadUrl(
+        VENDOR_ID,
+        'image/jpeg',
+      );
+
+      expect(result).toMatchObject({
+        uploadUrl: FAKE_PRESIGNED_URL,
+        expiresIn: 300,
+      });
+      expect(result.imageUrl).toMatch(/\/vendor-images\/.+\.jpg$/);
+    });
+
+    it('不支援的 MIME type 應拋出 BadRequestException', async () => {
+      const service = await createService();
+      await expect(
+        service.generateVendorImageUploadUrl(VENDOR_ID, 'image/gif'),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  // ----------------------------------------------------------------
   // 非法輸入
   // ----------------------------------------------------------------
   describe('contentType 驗證', () => {

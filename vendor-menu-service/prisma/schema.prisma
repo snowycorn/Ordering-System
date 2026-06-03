@@ -14,6 +14,7 @@ model Vendor {
   name         String   @db.VarChar(255)
   category     String?  @db.VarChar(100)        // 商家類別（中式、日式、便當...）
   description  String?  @db.Text                 // 商家描述
+  imageUrl     String?  @map("image_url") @db.Text // 商家圖片公開 URL（pre-signed S3 上傳後存入）
   factoryZones String[] @default([]) @map("factory_zones") // 服務廠區（可多個），詞彙範圍見 factory-zones.constant.ts
   violationPoints Int   @default(0) @map("violation_points") // 違規點數，管理員累加
   status       String   @default("ACTIVE") @db.VarChar(50)
