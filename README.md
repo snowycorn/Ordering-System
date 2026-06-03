@@ -81,7 +81,7 @@ npm run build
 | Workflow | 觸發條件 | 內容 |
 | --- | --- | --- |
 | `.github/workflows/ci.yml` | `register-service/**`、`vendor-menu-service/**` 或 workflow 變更 push 到 `main` | 後端服務測試與 EC2-B deploy。 |
-| `.github/workflows/frontend-ci.yml` | `frontend/**` 或 workflow 變更 push / PR 到 `main` | Frontend lint、unit coverage、Next.js build。 |
+| `.github/workflows/frontend-ci.yml` | `frontend/**` 或 workflow 變更 push / PR 到 `main` | PR 執行 Frontend lint、unit coverage、Next.js build；push 到 `main` 後 build/push Docker image 並 deploy frontend。 |
 
 Frontend CI 會執行：
 
@@ -92,8 +92,38 @@ npm run test:coverage -- --runInBand
 npm run build
 ```
 
+Frontend CD 只會在 merge / push 到 `main` 後執行：
+
+```text
+Build frontend Docker image
+Push image to GitHub Container Registry
+SSH into frontend EC2
+Pull latest image
+Restart frontend container on port 3000
+```
+
+Frontend deploy 需要在 GitHub repo 設定以下 Secrets：
+
+| Secret | 說明 |
+| --- | --- |
+| `FRONTEND_EC2_HOST` | 前端部署目標 EC2 host 或 IP。 |
+| `FRONTEND_EC2_USER` | SSH 使用者，例如 `ubuntu`。 |
+| `FRONTEND_EC2_SSH_KEY` | 可登入前端 EC2 的 private key。 |
+
+Frontend deploy 也建議設定以下 GitHub Variables：
+
+| Variable | 說明 |
+| --- | --- |
+| `FRONTEND_IAM_URL` | IAM service URL。 |
+| `FRONTEND_NOTIFICATION_URL` | Notification service URL。 |
+| `FRONTEND_RECOMMENDATION_URL` | Recommendation service URL。 |
+| `FRONTEND_BILLING_URL` | Billing service URL。 |
+| `FRONTEND_APPEAL_URL` | Appeal service URL。 |
+| `FRONTEND_VENDOR_URL` | Vendor/Menu service 或 API gateway URL。 |
+| `FRONTEND_ORDER_URL` | Order service 或 API gateway URL。 |
+
 ## 部署
 
 後端部署流程目前保留在 `.github/workflows/ci.yml`，會透過 SSH 更新 EC2-B 上的 `vendor-menu-service` 和 `register-service`。
 
-前端目前已整合到 repo，CI 會先確保 lint、coverage 與 build 通過。若要讓前端也自動部署，可在 `frontend-ci.yml` 後續新增 Docker build/push 或 SSH deploy job。
+前端目前已整合到 repo，CI 會先確保 lint、coverage 與 build 通過；合併到 `main` 後，`frontend-ci.yml` 會自動 build/push image 並部署到前端 EC2。
