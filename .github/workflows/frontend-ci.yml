@@ -105,6 +105,31 @@ jobs:
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
             docker pull ${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
 
+            mkdir -p ~/.config/ordering
+            cat > ~/.config/ordering/frontend.env << 'ENVEOF'
+            IAM_URL=${{ vars.FRONTEND_IAM_URL || secrets.FRONTEND_IAM_URL }}
+            NOTIFICATION_URL=${{ vars.FRONTEND_NOTIFICATION_URL || secrets.FRONTEND_NOTIFICATION_URL }}
+            RECOMMENDATION_URL=${{ vars.FRONTEND_RECOMMENDATION_URL || secrets.FRONTEND_RECOMMENDATION_URL }}
+            BILLING_URL=${{ vars.FRONTEND_BILLING_URL || secrets.FRONTEND_BILLING_URL }}
+            APPEAL_URL=${{ vars.FRONTEND_APPEAL_URL || secrets.FRONTEND_APPEAL_URL }}
+            VENDOR_URL=${{ vars.FRONTEND_VENDOR_URL || secrets.FRONTEND_VENDOR_URL }}
+            ORDER_URL=${{ vars.FRONTEND_ORDER_URL || secrets.FRONTEND_ORDER_URL }}
+            AUTH_COOKIE_NAME=token
+            AUTH_ROLE_COOKIE_NAME=role
+            AUTH_COOKIE_MAX_AGE=28800
+            USE_LOCAL_MOCKS=false
+            COOKIE_SECURE=false
+            NODE_ENV=production
+            ENVEOF
+            chmod 600 ~/.config/ordering/frontend.env
+
+            for key in IAM_URL NOTIFICATION_URL RECOMMENDATION_URL BILLING_URL APPEAL_URL VENDOR_URL ORDER_URL; do
+              if grep -q "^${key}=$" ~/.config/ordering/frontend.env; then
+                echo "Missing ${key}. Set the matching FRONTEND_* GitHub Actions Variable or Secret."
+                exit 1
+              fi
+            done
+
             docker stop frontend 2>/dev/null || true
             docker rm frontend 2>/dev/null || true
 
@@ -112,19 +137,7 @@ jobs:
               --name frontend \
               --restart unless-stopped \
               -p 3000:3000 \
-              -e IAM_URL=${{ vars.FRONTEND_IAM_URL }} \
-              -e NOTIFICATION_URL=${{ vars.FRONTEND_NOTIFICATION_URL }} \
-              -e RECOMMENDATION_URL=${{ vars.FRONTEND_RECOMMENDATION_URL }} \
-              -e BILLING_URL=${{ vars.FRONTEND_BILLING_URL }} \
-              -e APPEAL_URL=${{ vars.FRONTEND_APPEAL_URL }} \
-              -e VENDOR_URL=${{ vars.FRONTEND_VENDOR_URL }} \
-              -e ORDER_URL=${{ vars.FRONTEND_ORDER_URL }} \
-              -e AUTH_COOKIE_NAME=token \
-              -e AUTH_ROLE_COOKIE_NAME=role \
-              -e AUTH_COOKIE_MAX_AGE=28800 \
-              -e USE_LOCAL_MOCKS=false \
-              -e COOKIE_SECURE=false \
-              -e NODE_ENV=production \
+              --env-file ~/.config/ordering/frontend.env \
               ${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
 
             docker ps --filter "name=frontend"
