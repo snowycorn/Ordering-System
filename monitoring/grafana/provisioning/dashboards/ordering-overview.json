@@ -112,13 +112,24 @@
     },
     {
       "id": 8,
-      "title": "Logs (Loki)",
+      "title": "Logs — all services",
       "type": "logs",
       "datasource": { "type": "loki", "uid": "loki" },
       "gridPos": { "h": 10, "w": 24, "x": 0, "y": 30 },
       "options": { "showTime": true, "wrapLogMessage": true, "dedupStrategy": "none", "sortOrder": "Descending" },
       "targets": [
-        { "expr": "{container_name=~\"vendor-menu-service|register-service\"}", "refId": "A" }
+        { "expr": "{service_name=~\"vendor-menu-service|register-service|iam|notification|recommendation|billing|appeal-admin|order-service\"}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Error Logs — all services",
+      "type": "logs",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 40 },
+      "options": { "showTime": true, "wrapLogMessage": true, "dedupStrategy": "none", "sortOrder": "Descending" },
+      "targets": [
+        { "expr": "{service_name=~\"vendor-menu-service|register-service|iam|notification|recommendation|billing|appeal-admin|order-service\"} |~ `(?i)\"level\":\\s*\"?(error|fatal)\"?|\"level\":\\s*(50|60)|\"levelname\":\\s*\"(error|critical)\"`", "refId": "A" }
       ]
     }
   ]
