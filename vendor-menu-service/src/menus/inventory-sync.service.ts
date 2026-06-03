@@ -9,7 +9,7 @@ const BOOKING_WINDOW_DAYS = 9;
 
 /**
  * 每日庫存推進 cron：維持「未來 9 天」的滾動視窗。
- * 建立菜單時已種 D0..D+8；每天 23:00 把新的邊界日 D+8 種給 order-inventory。
+ * 建立菜單時已種 D0..D+8；每天 17:00 把新的邊界日 D+8 種給 order-inventory。
  * 多 1 天緩衝 + 午夜前推進：午夜後前端視窗翻新時，最遠日已在前一晚種好，避免時間競態。
  */
 @Injectable()
@@ -19,9 +19,9 @@ export class InventorySyncService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly orderInventory: OrderInventoryClient,
-  ) {}
+  ) { }
 
-  @Cron('0 23 * * *', { timeZone: 'Asia/Taipei' })
+  @Cron('0 17 * * *', { timeZone: 'Asia/Taipei' })
   async pushRollingBoundary(): Promise<void> {
     // 計算邊界日 D+8（Asia/Taipei today 加 BOOKING_WINDOW_DAYS-1 天）
     const today = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Taipei' }).split(' ')[0];
