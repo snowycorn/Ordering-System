@@ -110,7 +110,7 @@ Frontend deploy 需要在 GitHub repo 設定以下 Secrets：
 | `FRONTEND_EC2_USER` | SSH 使用者，例如 `ubuntu`。 |
 | `FRONTEND_EC2_SSH_KEY` | 可登入前端 EC2 的 private key。 |
 
-Frontend deploy 也建議設定以下 GitHub Variables：
+Frontend deploy 也需要設定以下 GitHub Variables。若你已經把這些值放在 Secrets，也可以；workflow 會優先讀 Variables，沒有 Variables 時改讀同名 Secrets。
 
 | Variable | 說明 |
 | --- | --- |
@@ -121,6 +121,25 @@ Frontend deploy 也建議設定以下 GitHub Variables：
 | `FRONTEND_APPEAL_URL` | Appeal service URL。 |
 | `FRONTEND_VENDOR_URL` | Vendor/Menu service 或 API gateway URL。 |
 | `FRONTEND_ORDER_URL` | Order service 或 API gateway URL。 |
+
+部署時 workflow 會在前端 EC2 產生：
+
+```text
+~/.config/ordering/frontend.env
+```
+
+前端 container 會用 `docker run --env-file ~/.config/ordering/frontend.env` 啟動。若要在 EC2 上檢查目前設定：
+
+```bash
+cat ~/.config/ordering/frontend.env
+docker exec frontend printenv | grep -E 'IAM_URL|VENDOR_URL|ORDER_URL|USE_LOCAL_MOCKS'
+```
+
+本機開發用的範例檔則在：
+
+```text
+frontend/.env.example
+```
 
 ## 部署
 
